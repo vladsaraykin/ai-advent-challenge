@@ -10,6 +10,11 @@ spring:
           model: ${OPENAI_MODEL:gpt-4.1-mini}
 
 app:
+  openai:
+    proxy:
+      enabled: ${OPENAI_PROXY_ENABLED:false}
+      host: ${OPENAI_PROXY_HOST:127.0.0.1}
+      port: ${OPENAI_PROXY_PORT:10809}
   chat:
     history-file: ${CHAT_HISTORY_FILE:./data/chat-history.json}
     provider-base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

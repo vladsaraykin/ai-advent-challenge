@@ -17,6 +17,9 @@ Optional environment variables:
 | --- | --- | --- |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Complete OpenAI-compatible API base URL, including `/v1` when required |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | Default model configured on the server |
+| `OPENAI_PROXY_ENABLED` | `false` | Route OpenAI HTTP requests through a proxy |
+| `OPENAI_PROXY_HOST` | `127.0.0.1` | OpenAI HTTP proxy host |
+| `OPENAI_PROXY_PORT` | `10809` | OpenAI HTTP proxy port |
 | `CHAT_HISTORY_FILE` | `./data/chat-history.json` | Local conversation file |
 | `APP_LOG_PROMPTS` | `false` | Log full system/user prompts; enable only when their content is not sensitive |
 
