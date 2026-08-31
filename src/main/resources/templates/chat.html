@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LLM Parameter Lab</title>
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body>
+<main class="page-shell">
+    <header class="hero">
+        <div>
+            <p class="eyebrow">AI Advent Challenge</p>
+            <h1>LLM Parameter Lab</h1>
+            <p class="subtitle">Shape the prompt, tune the sampling, and continue a file-backed conversation.</p>
+        </div>
+        <form th:action="@{/chat/clear}" method="post">
+            <button class="button button-secondary" type="submit">New chat</button>
+        </form>
+    </header>
+
+    <div class="alert alert-success" th:if="${notice}" th:text="${notice}"></div>
+    <div class="alert alert-error" th:if="${error}" th:text="${error}"></div>
+
+    <div class="workspace">
+        <section class="conversation-panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Conversation</p>
+                    <h2>Messages</h2>
+                </div>
+                <span class="message-count" th:text="${conversation.messages().size()} + ' messages'">0 messages</span>
+            </div>
+
+            <div class="empty-state" th:if="${conversation.messages().isEmpty()}">
+                <span class="empty-icon">✦</span>
+                <h3>Start a conversation</h3>
+                <p>Your messages and the model responses will appear here and persist after a restart.</p>
+            </div>
+
+            <div class="messages" th:unless="${conversation.messages().isEmpty()}">
+                <article class="message" th:each="message : ${conversation.messages()}"
+                         th:classappend="${message.role().name() == 'USER'} ? 'message-user' : 'message-assistant'">
+                    <div class="message-label" th:text="${message.role().name() == 'USER'} ? 'You' : 'Assistant'">Assistant</div>
+                    <div class="message-content" th:text="${message.content()}"></div>
+                </article>
+            </div>
+        </section>
+
+        <section class="controls-panel">
+            <form th:action="@{/chat}" th:object="${chatForm}" method="post">
+                <div class="panel-heading compact">
+                    <div>
+                        <p class="eyebrow">Request</p>
+                        <h2>Prompt & parameters</h2>
+                    </div>
+                </div>
+
+                <label for="provider">AI provider</label>
+                <select id="provider" th:field="*{provider}">
+                    <option th:each="provider : ${providers}" th:value="${provider.name()}"
+                            th:text="${provider.displayName}"></option>
+                </select>
+                <p class="field-error" th:errors="*{provider}"></p>
+
+                <label for="model">Model</label>
+                <input id="model" type="text" th:field="*{model}" placeholder="gpt-4.1-mini">
+                <p class="hint provider-hint" id="providerHint">OpenAI uses an API key from OPENAI_API_KEY.</p>
+                <p class="field-error" th:errors="*{model}"></p>
+
+                <label for="systemPrompt">System prompt</label>
+                <textarea id="systemPrompt" rows="4" th:field="*{systemPrompt}"></textarea>
+                <p class="field-error" th:errors="*{systemPrompt}"></p>
+
+                <label for="userPrompt">Your message</label>
+                <textarea id="userPrompt" class="user-prompt" rows="6" th:field="*{userPrompt}"
+                          placeholder="Ask the model anything…"></textarea>
+                <p class="field-error" th:errors="*{userPrompt}"></p>
+
+                <fieldset>
+                    <legend>Sampling controls</legend>
+                    <div class="parameter-grid">
+                        <div>
+                            <label for="temperature">Temperature</label>
+                            <input id="temperature" type="number" min="0" max="2" step="0.1" th:field="*{temperature}">
+                            <p class="hint">0–2</p>
+                            <p class="field-error" th:errors="*{temperature}"></p>
+                        </div>
+                        <div>
+                            <label for="topP">Top P</label>
+                            <input id="topP" type="number" min="0" max="1" step="0.05" th:field="*{topP}">
+                            <p class="hint">0–1</p>
+                            <p class="field-error" th:errors="*{topP}"></p>
+                        </div>
+                        <div>
+                            <label for="topK">Top K <span>optional</span></label>
+                            <input id="topK" type="number" min="0" step="1" th:field="*{topK}" placeholder="Provider-specific">
+                            <p class="hint">Leave blank for OpenAI</p>
+                            <p class="field-error" th:errors="*{topK}"></p>
+                        </div>
+                        <div>
+                            <label for="maxTokens">Max tokens</label>
+                            <input id="maxTokens" type="number" min="1" step="1" th:field="*{maxTokens}">
+                            <p class="hint">Response limit</p>
+                            <p class="field-error" th:errors="*{maxTokens}"></p>
+                        </div>
+                        <div>
+                            <label for="seed">Seed <span>optional</span></label>
+                            <input id="seed" type="number" step="1" th:field="*{seed}" placeholder="Random">
+                            <p class="hint">Best-effort repeatability</p>
+                            <p class="field-error" th:errors="*{seed}"></p>
+                        </div>
+                        <div>
+                            <label for="frequencyPenalty">Frequency penalty</label>
+                            <input id="frequencyPenalty" type="number" min="-2" max="2" step="0.1" th:field="*{frequencyPenalty}">
+                            <p class="hint">−2 to 2</p>
+                            <p class="field-error" th:errors="*{frequencyPenalty}"></p>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <button class="button button-primary" type="submit">
+                    <span>Send to model</span><span aria-hidden="true">→</span>
+                </button>
+            </form>
+        </section>
+    </div>
+</main>
+</body>
+</html>

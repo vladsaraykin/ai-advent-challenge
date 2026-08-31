@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: ai-advent-challenge
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:missing-api-key}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      chat:
+        options:
+          model: ${OPENAI_MODEL:gpt-4.1-mini}
+
+app:
+  chat:
+    history-file: ${CHAT_HISTORY_FILE:./data/chat-history.json}
+    provider-base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    log-prompts: ${APP_LOG_PROMPTS:false}

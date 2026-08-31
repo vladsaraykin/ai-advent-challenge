@@ -49,3 +49,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Local application data and secrets
+data/
+.env
+.env.*
+!.env.example
