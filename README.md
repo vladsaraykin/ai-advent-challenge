@@ -1,6 +1,11 @@
 # AI Advent Challenge
 
-A Java 21 / Spring Boot / Spring AI web application for experimenting with OpenAI sampling parameters. It provides a one-page Thymeleaf chat UI and stores conversation history in a local JSON file. Previous user and assistant messages are replayed to the model on every request.
+A Java 21 / Spring Boot / Spring AI web application for experimenting with OpenAI prompts and sampling parameters.
+
+- `/` is a parameterized chat with file-backed conversation history.
+- `/movies` is a movie expert comparison lab. It sends the same request twice: once with model defaults and once with explicit output format, answer limits, a stop sequence, and custom sampling settings.
+
+The controlled movie answer supports Markdown and strict JSON. JSON recommendations contain the title, the expert's 0–10 rating, release year or series run, fit, difference, and mood.
 
 ## Run with OpenAI
 

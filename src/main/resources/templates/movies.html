@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Киноэксперт — сравнение контроля ответа</title>
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body>
+<main class="page-shell movie-page">
+    <nav class="top-nav" aria-label="Основная навигация">
+        <a th:href="@{/}">Чат и параметры</a>
+        <a class="active" th:href="@{/movies}">Киноэксперт</a>
+    </nav>
+
+    <header class="hero movie-hero">
+        <div>
+            <p class="eyebrow">AI Advent Challenge · Task 2</p>
+            <h1>Киноэксперт</h1>
+            <p class="subtitle">Один запрос — два ответа: свободный и управляемый.</p>
+        </div>
+        <div class="comparison-legend">
+            <span><i class="dot dot-default"></i> Без ограничений</span>
+            <span><i class="dot dot-controlled"></i> С ограничениями</span>
+        </div>
+    </header>
+
+    <div class="alert alert-error" th:if="${error}" th:text="${error}"></div>
+
+    <form class="movie-form" th:action="@{/movies/compare}" th:object="${movieForm}" method="post">
+        <section class="prompt-card">
+            <div>
+                <label for="userPrompt">Что подобрать или разобрать?</label>
+                <textarea id="userPrompt" rows="4" th:field="*{userPrompt}"
+                          placeholder="Например: Мне понравился «Бегущий по лезвию 2049». Посоветуй похожее кино без хоррора."></textarea>
+                <p class="field-error" th:errors="*{userPrompt}"></p>
+            </div>
+            <button class="button button-primary compare-button" type="submit">
+                <span>Сравнить ответы</span><span aria-hidden="true">→</span>
+            </button>
+        </section>
+
+        <details class="settings-card" open>
+            <summary>
+                <span><strong>Контроль ответа</strong><small>Применяется только к правому ответу</small></span>
+                <span aria-hidden="true">⌄</span>
+            </summary>
+            <div class="settings-content">
+                <div class="parameter-grid movie-parameters">
+                    <div>
+                        <label for="model">Модель</label>
+                        <input id="model" type="text" th:field="*{model}">
+                        <p class="hint">Одинакова для обоих запросов</p>
+                        <p class="field-error" th:errors="*{model}"></p>
+                    </div>
+                    <div>
+                        <label for="responseFormat">Формат ответа</label>
+                        <select id="responseFormat" th:field="*{responseFormat}">
+                            <option th:each="format : ${formats}" th:value="${format.name()}"
+                                    th:text="${format.displayName}"></option>
+                        </select>
+                        <p class="hint">Markdown или строгая JSON-схема</p>
+                    </div>
+                    <div>
+                        <label for="maxWords">Максимум слов</label>
+                        <input id="maxWords" type="number" min="50" max="2000" th:field="*{maxWords}">
+                        <p class="hint">Явная инструкция модели</p>
+                        <p class="field-error" th:errors="*{maxWords}"></p>
+                    </div>
+                    <div>
+                        <label for="stopSequence">Stop sequence</label>
+                        <input id="stopSequence" type="text" th:field="*{stopSequence}">
+                        <p class="hint">Маркер передается в OpenAI API</p>
+                        <p class="field-error" th:errors="*{stopSequence}"></p>
+                    </div>
+                    <div>
+                        <label for="temperature">Temperature</label>
+                        <input id="temperature" type="number" min="0" max="2" step="0.1" th:field="*{temperature}">
+                        <p class="hint">0–2</p>
+                    </div>
+                    <div>
+                        <label for="topP">Top P</label>
+                        <input id="topP" type="number" min="0" max="1" step="0.05" th:field="*{topP}">
+                        <p class="hint">0–1</p>
+                    </div>
+                    <div>
+                        <label for="topK">Top K <span>опционально</span></label>
+                        <input id="topK" type="number" min="0" th:field="*{topK}" placeholder="Не задан">
+                        <p class="hint">Для OpenAI-совместимых API</p>
+                    </div>
+                    <div>
+                        <label for="maxTokens">Max tokens</label>
+                        <input id="maxTokens" type="number" min="64" max="16000" th:field="*{maxTokens}">
+                        <p class="hint">Жесткий API-лимит ответа</p>
+                    </div>
+                    <div>
+                        <label for="seed">Seed <span>опционально</span></label>
+                        <input id="seed" type="number" th:field="*{seed}" placeholder="Случайный">
+                        <p class="hint">Повторяемость best effort</p>
+                    </div>
+                    <div>
+                        <label for="frequencyPenalty">Frequency penalty</label>
+                        <input id="frequencyPenalty" type="number" min="-2" max="2" step="0.1" th:field="*{frequencyPenalty}">
+                        <p class="hint">−2…2</p>
+                    </div>
+                </div>
+            </div>
+        </details>
+    </form>
+
+    <section class="comparison-grid" th:if="${comparison}">
+        <article class="answer-card answer-default">
+            <div class="answer-heading">
+                <div><p class="eyebrow">Вариант A</p><h2>Без ограничений</h2></div>
+                <span class="badge">Default API settings</span>
+            </div>
+            <pre class="answer-content" th:text="${comparison.unrestrictedAnswer()}"></pre>
+        </article>
+        <article class="answer-card answer-controlled">
+            <div class="answer-heading">
+                <div><p class="eyebrow">Вариант B</p><h2>С ограничениями</h2></div>
+                <span class="badge badge-accent" th:text="${movieForm.responseFormat.displayName}">Markdown</span>
+            </div>
+            <div class="control-summary">
+                <span th:text="'≤ ' + ${movieForm.maxWords} + ' слов'">≤ 350 слов</span>
+                <span th:text="'≤ ' + ${movieForm.maxTokens} + ' токенов'">≤ 900 токенов</span>
+                <span th:text="'stop: ' + ${movieForm.stopSequence}">stop: &lt;END&gt;</span>
+            </div>
+            <pre class="answer-content" th:text="${comparison.controlledAnswer()}"></pre>
+        </article>
+    </section>
+</main>
+</body>
+</html>

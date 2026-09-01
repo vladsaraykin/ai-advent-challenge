@@ -27,6 +27,9 @@ body {
 button, input, textarea, select { font: inherit; }
 
 .page-shell { max-width: 1480px; margin: 0 auto; padding: 38px; }
+.top-nav { display: flex; gap: 8px; margin-bottom: 24px; }
+.top-nav a { color: var(--muted); text-decoration: none; padding: 8px 12px; border: 1px solid transparent; border-radius: 999px; font-size: .82rem; font-weight: 700; }
+.top-nav a:hover, .top-nav a.active { color: var(--text); border-color: var(--line); background: var(--panel); }
 
 .hero, .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .hero { margin-bottom: 30px; }
@@ -82,12 +85,42 @@ legend { padding-right: 12px; color: var(--accent); }
 .alert-success { color: var(--success); border-color: rgba(158, 231, 186, .35); background: rgba(158, 231, 186, .07); }
 .alert-error { color: var(--danger); border-color: rgba(255, 141, 133, .35); background: rgba(255, 141, 133, .07); }
 
+.movie-page { max-width: 1580px; }
+.movie-hero { align-items: flex-end; }
+.comparison-legend { display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); font-size: .78rem; }
+.dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; }
+.dot-default { background: #87918c; }
+.dot-controlled { background: var(--accent); box-shadow: 0 0 12px rgba(201, 245, 109, .55); }
+.movie-form { display: grid; gap: 14px; }
+.prompt-card, .settings-card, .answer-card { border: 1px solid var(--line); background: rgba(24, 29, 28, .94); border-radius: 18px; }
+.prompt-card { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: end; padding: 24px; }
+.prompt-card textarea { min-height: 112px; }
+.compare-button { height: 48px; margin-bottom: 1px; }
+.settings-card { overflow: hidden; }
+.settings-card summary { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; cursor: pointer; list-style: none; }
+.settings-card summary::-webkit-details-marker { display: none; }
+.settings-card summary small { display: block; color: var(--muted); font-weight: 400; margin-top: 3px; }
+.settings-content { border-top: 1px solid var(--line); padding: 20px 24px 24px; }
+.movie-parameters { grid-template-columns: repeat(5, minmax(140px, 1fr)); }
+.comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; align-items: start; }
+.answer-card { min-width: 0; overflow: hidden; }
+.answer-controlled { border-color: rgba(201, 245, 109, .38); }
+.answer-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.answer-heading .eyebrow { margin-bottom: 6px; }
+.badge { color: var(--muted); background: #111615; border: 1px solid var(--line); border-radius: 999px; padding: 6px 9px; font-size: .68rem; white-space: nowrap; }
+.badge-accent { color: var(--accent); border-color: rgba(201, 245, 109, .3); }
+.control-summary { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 22px 0; }
+.control-summary span { color: var(--muted); background: rgba(201, 245, 109, .05); border: 1px solid rgba(201, 245, 109, .16); border-radius: 6px; padding: 5px 8px; font-size: .68rem; }
+.answer-content { margin: 0; padding: 22px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .9rem; line-height: 1.6; }
+
 @media (max-width: 900px) {
     .page-shell { padding: 22px; }
     .workspace { grid-template-columns: 1fr; }
     .controls-panel { position: static; }
     .conversation-panel { min-height: 420px; }
     .empty-state { min-height: 300px; }
+    .movie-parameters { grid-template-columns: 1fr 1fr; }
+    .comparison-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {
@@ -95,4 +128,7 @@ legend { padding-right: 12px; color: var(--accent); }
     .hero { align-items: flex-end; }
     .parameter-grid { grid-template-columns: 1fr; }
     .message { max-width: 94%; }
+    .prompt-card { grid-template-columns: 1fr; }
+    .movie-parameters { grid-template-columns: 1fr; }
+    .movie-hero { align-items: flex-start; flex-direction: column; }
 }
