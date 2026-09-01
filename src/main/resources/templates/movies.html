@@ -1,134 +1,88 @@
 <!doctype html>
 <html lang="ru" xmlns:th="http://www.thymeleaf.org">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Киноэксперт — сравнение контроля ответа</title>
-    <link rel="stylesheet" th:href="@{/css/app.css}">
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Киноэксперт — два режима чата</title><link rel="stylesheet" th:href="@{/css/app.css}">
 </head>
 <body>
 <main class="page-shell movie-page">
-    <nav class="top-nav" aria-label="Основная навигация">
-        <a th:href="@{/}">Чат и параметры</a>
-        <a class="active" th:href="@{/movies}">Киноэксперт</a>
-    </nav>
-
-    <header class="hero movie-hero">
-        <div>
-            <p class="eyebrow">AI Advent Challenge · Task 2</p>
-            <h1>Киноэксперт</h1>
-            <p class="subtitle">Один запрос — два ответа: свободный и управляемый.</p>
-        </div>
-        <div class="comparison-legend">
-            <span><i class="dot dot-default"></i> Без ограничений</span>
-            <span><i class="dot dot-controlled"></i> С ограничениями</span>
-        </div>
-    </header>
-
+    <nav class="top-nav"><a th:href="@{/}">Чат и параметры</a><a class="active" th:href="@{/movies}">Киноэксперт</a></nav>
+    <header class="hero movie-hero"><div><p class="eyebrow">AI Advent Challenge · Task 2</p><h1>Киноэксперт</h1><p class="subtitle">Найдите фильм в свободном диалоге, затем повторите разговор с контролем ответа.</p></div></header>
     <div class="alert alert-error" th:if="${error}" th:text="${error}"></div>
 
-    <form class="movie-form" th:action="@{/movies/compare}" th:object="${movieForm}" method="post">
-        <section class="prompt-card">
-            <div>
-                <label for="userPrompt">Что подобрать или разобрать?</label>
-                <textarea id="userPrompt" rows="4" th:field="*{userPrompt}"
-                          placeholder="Например: Мне понравился «Бегущий по лезвию 2049». Посоветуй похожее кино без хоррора."></textarea>
-                <p class="field-error" th:errors="*{userPrompt}"></p>
-            </div>
-            <button class="button button-primary compare-button" type="submit">
-                <span>Сравнить ответы</span><span aria-hidden="true">→</span>
-            </button>
+    <form id="movieChatForm" th:action="@{/movies/chat}" th:object="${movieForm}" method="post">
+        <section class="mode-switch" aria-label="Режим киноэксперта">
+            <label class="mode-option" th:classappend="*{mode.name() == 'DEFAULT'} ? 'active'" data-mode="DEFAULT">
+                <input type="radio" th:field="*{mode}" value="DEFAULT"><span><strong>Обычный диалог</strong><small>Настройки модели по умолчанию</small></span>
+            </label>
+            <label class="mode-option" th:classappend="*{mode.name() == 'CONTROLLED'} ? 'active'" data-mode="CONTROLLED">
+                <input type="radio" th:field="*{mode}" value="CONTROLLED"><span><strong>Диалог с контролем</strong><small>Формат, длина, stop и мета-настройки</small></span>
+            </label>
         </section>
 
-        <details class="settings-card" open>
-            <summary>
-                <span><strong>Контроль ответа</strong><small>Применяется только к правому ответу</small></span>
-                <span aria-hidden="true">⌄</span>
-            </summary>
-            <div class="settings-content">
-                <div class="parameter-grid movie-parameters">
-                    <div>
-                        <label for="model">Модель</label>
-                        <input id="model" type="text" th:field="*{model}">
-                        <p class="hint">Одинакова для обоих запросов</p>
-                        <p class="field-error" th:errors="*{model}"></p>
-                    </div>
-                    <div>
-                        <label for="responseFormat">Формат ответа</label>
-                        <select id="responseFormat" th:field="*{responseFormat}">
-                            <option th:each="format : ${formats}" th:value="${format.name()}"
-                                    th:text="${format.displayName}"></option>
-                        </select>
-                        <p class="hint">Markdown или строгая JSON-схема</p>
-                    </div>
-                    <div>
-                        <label for="maxWords">Максимум слов</label>
-                        <input id="maxWords" type="number" min="50" max="2000" th:field="*{maxWords}">
-                        <p class="hint">Явная инструкция модели</p>
-                        <p class="field-error" th:errors="*{maxWords}"></p>
-                    </div>
-                    <div>
-                        <label for="stopSequence">Stop sequence</label>
-                        <input id="stopSequence" type="text" th:field="*{stopSequence}">
-                        <p class="hint">Маркер передается в OpenAI API</p>
-                        <p class="field-error" th:errors="*{stopSequence}"></p>
-                    </div>
-                    <div>
-                        <label for="temperature">Temperature</label>
-                        <input id="temperature" type="number" min="0" max="2" step="0.1" th:field="*{temperature}">
-                        <p class="hint">0–2</p>
-                    </div>
-                    <div>
-                        <label for="topP">Top P</label>
-                        <input id="topP" type="number" min="0" max="1" step="0.05" th:field="*{topP}">
-                        <p class="hint">0–1</p>
-                    </div>
-                    <div>
-                        <label for="topK">Top K <span>опционально</span></label>
-                        <input id="topK" type="number" min="0" th:field="*{topK}" placeholder="Не задан">
-                        <p class="hint">Для OpenAI-совместимых API</p>
-                    </div>
-                    <div>
-                        <label for="maxTokens">Max tokens</label>
-                        <input id="maxTokens" type="number" min="64" max="16000" th:field="*{maxTokens}">
-                        <p class="hint">Жесткий API-лимит ответа</p>
-                    </div>
-                    <div>
-                        <label for="seed">Seed <span>опционально</span></label>
-                        <input id="seed" type="number" th:field="*{seed}" placeholder="Случайный">
-                        <p class="hint">Повторяемость best effort</p>
-                    </div>
-                    <div>
-                        <label for="frequencyPenalty">Frequency penalty</label>
-                        <input id="frequencyPenalty" type="number" min="-2" max="2" step="0.1" th:field="*{frequencyPenalty}">
-                        <p class="hint">−2…2</p>
+        <div class="movie-workspace">
+            <section class="conversation-panel movie-conversation">
+                <div class="panel-heading"><div><p class="eyebrow">Активный режим</p><h2 id="conversationTitle">Диалог без ограничений</h2></div><button class="button button-secondary" type="submit" form="clearChatForm">Очистить диалог</button></div>
+
+                <div class="mode-conversation" data-conversation="DEFAULT" th:hidden="*{mode.name() != 'DEFAULT'}">
+                    <div class="empty-state" th:if="${movieChats.messages(T(com.github.vladsaraykin.aichat.movie.MovieChatMode).DEFAULT).isEmpty()}"><span class="empty-icon">✦</span><h3>Начните подбор фильма</h3><p>Киноэксперт будет помнить сообщения этого режима в текущей браузерной сессии.</p></div>
+                    <div class="messages" th:unless="${movieChats.messages(T(com.github.vladsaraykin.aichat.movie.MovieChatMode).DEFAULT).isEmpty()}">
+                        <article class="message" th:each="message : ${movieChats.messages(T(com.github.vladsaraykin.aichat.movie.MovieChatMode).DEFAULT)}" th:classappend="${message.role().name() == 'USER'} ? 'message-user' : 'message-assistant'">
+                            <div class="message-label" th:text="${message.role().name() == 'USER'} ? 'Вы' : 'Киноэксперт'"></div><div class="message-content" th:text="${message.content()}"></div>
+                        </article>
                     </div>
                 </div>
-            </div>
-        </details>
-    </form>
 
-    <section class="comparison-grid" th:if="${comparison}">
-        <article class="answer-card answer-default">
-            <div class="answer-heading">
-                <div><p class="eyebrow">Вариант A</p><h2>Без ограничений</h2></div>
-                <span class="badge">Default API settings</span>
-            </div>
-            <pre class="answer-content" th:text="${comparison.unrestrictedAnswer()}"></pre>
-        </article>
-        <article class="answer-card answer-controlled">
-            <div class="answer-heading">
-                <div><p class="eyebrow">Вариант B</p><h2>С ограничениями</h2></div>
-                <span class="badge badge-accent" th:text="${movieForm.responseFormat.displayName}">Markdown</span>
-            </div>
-            <div class="control-summary">
-                <span th:text="'≤ ' + ${movieForm.maxWords} + ' слов'">≤ 350 слов</span>
-                <span th:text="'≤ ' + ${movieForm.maxTokens} + ' токенов'">≤ 900 токенов</span>
-                <span th:text="'stop: ' + ${movieForm.stopSequence}">stop: &lt;END&gt;</span>
-            </div>
-            <pre class="answer-content" th:text="${comparison.controlledAnswer()}"></pre>
-        </article>
-    </section>
+                <div class="mode-conversation" data-conversation="CONTROLLED" th:hidden="*{mode.name() != 'CONTROLLED'}">
+                    <div class="empty-state" th:if="${movieChats.messages(T(com.github.vladsaraykin.aichat.movie.MovieChatMode).CONTROLLED).isEmpty()}"><span class="empty-icon">⌁</span><h3>Повторите диалог с ограничениями</h3><p>Это отдельная история: сообщения обычного режима сюда не передаются.</p></div>
+                    <div class="messages" th:unless="${movieChats.messages(T(com.github.vladsaraykin.aichat.movie.MovieChatMode).CONTROLLED).isEmpty()}">
+                        <article class="message" th:each="message : ${movieChats.messages(T(com.github.vladsaraykin.aichat.movie.MovieChatMode).CONTROLLED)}" th:classappend="${message.role().name() == 'USER'} ? 'message-user' : 'message-assistant'">
+                            <div class="message-label" th:text="${message.role().name() == 'USER'} ? 'Вы' : 'Киноэксперт'"></div><div class="message-content" th:text="${message.content()}"></div>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section class="controls-panel movie-controls">
+                <p class="eyebrow">Сообщение</p><h2>Запрос киноэксперту</h2>
+                <label for="userPrompt">Ваш запрос</label><textarea id="userPrompt" class="user-prompt" rows="6" th:field="*{userPrompt}" placeholder="Какое настроение хочется? Какие фильмы недавно понравились?"></textarea><p class="field-error" th:errors="*{userPrompt}"></p>
+                <label for="model">Модель</label><input id="model" type="text" th:field="*{model}"><p class="field-error" th:errors="*{model}"></p>
+
+                <div id="controlledSettings" th:hidden="*{mode.name() != 'CONTROLLED'}">
+                    <fieldset><legend>Ограничения ответа</legend><div class="parameter-grid">
+                        <div><label for="responseFormat">Формат</label><select id="responseFormat" th:field="*{responseFormat}"><option th:each="format : ${formats}" th:value="${format.name()}" th:text="${format.displayName}"></option></select></div>
+                        <div><label for="maxWords">Максимум слов</label><input id="maxWords" type="number" min="50" max="2000" th:field="*{maxWords}"></div>
+                        <div><label for="stopSequence">Stop sequence</label><input id="stopSequence" type="text" th:field="*{stopSequence}"></div>
+                        <div><label for="maxTokens">Max tokens</label><input id="maxTokens" type="number" min="64" max="16000" th:field="*{maxTokens}"></div>
+                    </div></fieldset>
+                    <fieldset><legend>Мета-настройки</legend><div class="parameter-grid">
+                        <div><label for="temperature">Temperature</label><input id="temperature" type="number" min="0" max="2" step="0.1" th:field="*{temperature}"></div>
+                        <div><label for="topP">Top P</label><input id="topP" type="number" min="0" max="1" step="0.05" th:field="*{topP}"></div>
+                        <div><label for="topK">Top K <span>опционально</span></label><input id="topK" type="number" min="0" th:field="*{topK}"></div>
+                        <div><label for="seed">Seed <span>опционально</span></label><input id="seed" type="number" th:field="*{seed}"></div>
+                        <div><label for="frequencyPenalty">Frequency penalty</label><input id="frequencyPenalty" type="number" min="-2" max="2" step="0.1" th:field="*{frequencyPenalty}"></div>
+                    </div></fieldset>
+                </div>
+                <button class="button button-primary" type="submit"><span>Отправить</span><span>→</span></button>
+            </section>
+        </div>
+    </form>
+    <form id="clearChatForm" th:action="@{/movies/clear}" method="post"><input type="hidden" name="mode" id="clearMode" th:value="${movieForm.mode}"></form>
 </main>
+<script>
+    const modeOptions = document.querySelectorAll('.mode-option');
+    const controlledSettings = document.getElementById('controlledSettings');
+    const conversationTitle = document.getElementById('conversationTitle');
+    const clearMode = document.getElementById('clearMode');
+    function switchMode(mode) {
+        modeOptions.forEach(option => option.classList.toggle('active', option.dataset.mode === mode));
+        document.querySelectorAll('.mode-conversation').forEach(panel => panel.hidden = panel.dataset.conversation !== mode);
+        controlledSettings.hidden = mode !== 'CONTROLLED';
+        conversationTitle.textContent = mode === 'CONTROLLED' ? 'Диалог с ограничениями' : 'Диалог без ограничений';
+        clearMode.value = mode;
+    }
+    modeOptions.forEach(option => option.addEventListener('change', () => switchMode(option.dataset.mode)));
+    switchMode(document.querySelector('input[name="mode"]:checked').value);
+</script>
 </body>
 </html>

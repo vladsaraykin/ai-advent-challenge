@@ -1,6 +1,7 @@
 package com.github.vladsaraykin.aichat.movie;
 
 import com.github.vladsaraykin.aichat.config.ChatProperties;
+import com.github.vladsaraykin.aichat.history.ChatMessage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -10,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -58,17 +61,19 @@ public class MovieExpertService {
         this.systemPrompt = loadSystemPrompt();
     }
 
-    public MovieComparisonResult compare(MovieComparisonForm form) {
-        logger.info("Comparing movie expert responses: baseUrl={}, model={}, format={}, maxWords={}, maxTokens={}, "
+    public String send(MovieComparisonForm form, List<ChatMessage> history) {
+        logger.info("Calling movie expert: baseUrl={}, model={}, mode={}, historyMessages={}, format={}, maxWords={}, maxTokens={}, "
                         + "temperature={}, topP={}, topK={}, seed={}, frequencyPenalty={}",
-                properties.providerBaseUrl(), form.getModel(), form.getResponseFormat(), form.getMaxWords(),
-                form.getMaxTokens(), form.getTemperature(), form.getTopP(), form.getTopK(), form.getSeed(),
-                form.getFrequencyPenalty());
+                properties.providerBaseUrl(), form.getModel(), form.getMode(), history.size(), form.getResponseFormat(),
+                form.getMaxWords(), form.getMaxTokens(), form.getTemperature(), form.getTopP(), form.getTopK(),
+                form.getSeed(), form.getFrequencyPenalty());
 
-        String unrestricted = call(systemPrompt, form.getUserPrompt(),
-                OpenAiChatOptions.builder().model(form.getModel()).build());
-        String controlled = call(controlledSystemPrompt(form), form.getUserPrompt(), controlledOptions(form));
-        return new MovieComparisonResult(unrestricted, controlled);
+        boolean controlled = form.getMode() == MovieChatMode.CONTROLLED;
+        String prompt = controlled ? controlledSystemPrompt(form) : systemPrompt;
+        OpenAiChatOptions options = controlled
+                ? controlledOptions(form)
+                : OpenAiChatOptions.builder().model(form.getModel()).build();
+        return call(prompt, form.getUserPrompt(), history, options);
     }
 
     String controlledSystemPrompt(MovieComparisonForm form) {
@@ -106,8 +111,15 @@ public class MovieExpertService {
         return builder.build();
     }
 
-    private String call(String system, String user, OpenAiChatOptions options) {
-        return chatModel.call(new Prompt(List.of(new SystemMessage(system), new UserMessage(user)), options))
+    private String call(String system, String user, List<ChatMessage> history, OpenAiChatOptions options) {
+        List<Message> messages = new java.util.ArrayList<>();
+        messages.add(new SystemMessage(system));
+        history.forEach(message -> messages.add(switch (message.role()) {
+            case USER -> new UserMessage(message.content());
+            case ASSISTANT -> new AssistantMessage(message.content());
+        }));
+        messages.add(new UserMessage(user));
+        return chatModel.call(new Prompt(messages, options))
                 .getResult().getOutput().getText();
     }
 

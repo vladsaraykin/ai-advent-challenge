@@ -92,6 +92,17 @@ legend { padding-right: 12px; color: var(--accent); }
 .dot-default { background: #87918c; }
 .dot-controlled { background: var(--accent); box-shadow: 0 0 12px rgba(201, 245, 109, .55); }
 .movie-form { display: grid; gap: 14px; }
+.mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.mode-option { display: flex; align-items: center; gap: 12px; margin: 0; padding: 15px 18px; color: var(--muted); background: rgba(24, 29, 28, .94); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
+.mode-option input { width: auto; accent-color: var(--accent); }
+.mode-option span, .mode-option small { display: block; }
+.mode-option small { margin-top: 4px; color: var(--muted); font-weight: 400; }
+.mode-option.active { color: var(--text); border-color: rgba(201, 245, 109, .5); background: rgba(201, 245, 109, .07); }
+.movie-workspace { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(380px, .8fr); gap: 18px; align-items: start; }
+.movie-conversation { min-height: 680px; }
+.movie-controls h2 { margin-bottom: 22px; }
+.movie-controls > input, .movie-controls > textarea { margin-bottom: 16px; }
+.mode-conversation .messages { max-height: 650px; }
 .prompt-card, .settings-card, .answer-card { border: 1px solid var(--line); background: rgba(24, 29, 28, .94); border-radius: 18px; }
 .prompt-card { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: end; padding: 24px; }
 .prompt-card textarea { min-height: 112px; }
@@ -121,6 +132,8 @@ legend { padding-right: 12px; color: var(--accent); }
     .empty-state { min-height: 300px; }
     .movie-parameters { grid-template-columns: 1fr 1fr; }
     .comparison-grid { grid-template-columns: 1fr; }
+    .movie-workspace { grid-template-columns: 1fr; }
+    .movie-controls { position: static; }
 }
 
 @media (max-width: 520px) {
@@ -131,4 +144,5 @@ legend { padding-right: 12px; color: var(--accent); }
     .prompt-card { grid-template-columns: 1fr; }
     .movie-parameters { grid-template-columns: 1fr; }
     .movie-hero { align-items: flex-start; flex-direction: column; }
+    .mode-switch { grid-template-columns: 1fr; }
 }

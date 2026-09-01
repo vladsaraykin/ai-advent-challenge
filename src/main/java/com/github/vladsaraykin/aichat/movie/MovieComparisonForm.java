@@ -10,6 +10,9 @@ import jakarta.validation.constraints.Size;
 
 public class MovieComparisonForm {
 
+    @NotNull
+    private MovieChatMode mode = MovieChatMode.DEFAULT;
+
     @NotBlank
     @Size(max = 200)
     private String model = "gpt-4.1-mini";
@@ -56,6 +59,8 @@ public class MovieComparisonForm {
     @DecimalMax("2.0")
     private Double frequencyPenalty = 0.0;
 
+    public MovieChatMode getMode() { return mode; }
+    public void setMode(MovieChatMode mode) { this.mode = mode; }
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }
     public String getUserPrompt() { return userPrompt; }
