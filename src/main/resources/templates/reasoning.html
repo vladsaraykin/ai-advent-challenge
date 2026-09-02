@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Лаборатория рассуждений — четыре подхода</title>
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body>
+<main class="page-shell reasoning-page">
+    <nav class="top-nav" aria-label="Основная навигация">
+        <a th:href="@{/}">Чат и параметры</a>
+        <a th:href="@{/movies}">Киноэксперт</a>
+        <a class="active" th:href="@{/reasoning}">Лаборатория рассуждений</a>
+    </nav>
+
+    <header class="hero reasoning-hero">
+        <div>
+            <p class="eyebrow">AI Advent Challenge · Task 3</p>
+            <h1>Четыре способа рассуждать</h1>
+            <p class="subtitle">Одна задача, четыре стратегии запроса и сравнение точности с расходом токенов.</p>
+        </div>
+        <a class="button button-secondary download-button" th:if="${comparison != null}" th:href="@{/reasoning/download}" download>Скачать .md</a>
+    </header>
+
+    <div class="alert alert-error" th:if="${error}" th:text="${error}"></div>
+
+    <form id="reasoningForm" class="reasoning-form" th:action="@{/reasoning/compare}" th:object="${reasoningForm}" method="post">
+        <section class="prompt-card reasoning-prompt-card">
+            <div>
+                <label for="task">Задача для решения</label>
+                <textarea id="task" rows="6" th:field="*{task}" placeholder="Например: Есть 100 монет, одна фальшивая и легче остальных. Как найти её за минимальное число взвешиваний?"></textarea>
+                <p class="field-error" th:errors="*{task}"></p>
+            </div>
+            <div class="reasoning-submit">
+                <label for="model">Модель</label>
+                <select id="model" th:field="*{model}">
+                    <option th:each="availableModel : ${openAiModels}"
+                            th:value="${availableModel.id}"
+                            th:text="${availableModel.displayName} + ' · ' + ${availableModel.id}"></option>
+                </select>
+                <p class="field-error" th:errors="*{model}"></p>
+                <label for="maxTokens">Максимум токенов на ответ</label>
+                <input id="maxTokens" type="number" min="128" max="16000" th:field="*{maxTokens}">
+                <p class="field-error" th:errors="*{maxTokens}"></p>
+                <button id="compareButton" class="button button-primary compare-button" type="submit">
+                    <span id="compareButtonLabel">Сравнить подходы</span><span id="compareButtonIcon">→</span>
+                </button>
+                <p class="hint">Запросы выполняются параллельно, не более двух одновременно.</p>
+            </div>
+        </section>
+    </form>
+
+    <section id="reasoningLoading" class="reasoning-loading" role="status" aria-live="polite" hidden>
+        <div class="loading-heading">
+            <div>
+                <p class="eyebrow">Запрос отправлен</p>
+                <h2>Сравниваем четыре подхода</h2>
+            </div>
+            <span class="loading-spinner" aria-hidden="true"></span>
+        </div>
+        <div class="loading-track" aria-label="Ожидание ответа"><span></span></div>
+        <p id="loadingMessage">Запускаем первые два запроса к модели…</p>
+        <small>Выполняется не более двух запросов одновременно. После решений модель подготовит краткое сравнение.</small>
+    </section>
+
+    <section class="reasoning-empty" th:if="${comparison == null}">
+        <span class="empty-icon">⌘</span>
+        <h2>Введите задачу для сравнения</h2>
+        <p>Вы получите прямой ответ, пошаговое решение, решение с предварительно созданным промптом и мнения группы экспертов.</p>
+    </section>
+
+    <div id="reasoningResults" th:if="${comparison != null}">
+        <section class="summary-card">
+            <div class="summary-heading">
+                <div><p class="eyebrow">Краткий итог</p><h2>Сравнение подходов</h2></div>
+                <div class="summary-metrics">
+                    <div class="token-total"><strong th:text="${comparison.usage.totalTokens}">0</strong><span>токенов всего</span></div>
+                    <div class="token-total"><strong th:text="${comparison.durationLabel}">0 с</strong><span>общее время</span></div>
+                </div>
+            </div>
+            <p class="summary-text" th:text="${comparison.summary}"></p>
+        </section>
+
+        <section class="approach-grid" aria-label="Четыре решения задачи">
+            <article class="approach-card" th:each="result, stat : ${comparison.results}">
+                <header class="approach-heading">
+                    <div>
+                        <p class="eyebrow" th:text="'Подход ' + ${stat.count}">Подход 1</p>
+                        <h2 th:text="${result.approach.displayName}">Прямой ответ</h2>
+                    </div>
+                    <div class="approach-badges">
+                        <span class="badge badge-accent" th:text="${result.usage.totalTokens} + ' токенов'">0 токенов</span>
+                        <span class="badge" th:text="${result.durationLabel}">0 с</span>
+                    </div>
+                </header>
+                <p class="approach-description" th:switch="${result.approach.name()}">
+                    <span th:case="'DIRECT'">Ответ без дополнительных инструкций.</span>
+                    <span th:case="'STEP_BY_STEP'">Модель получает инструкцию решать задачу пошагово.</span>
+                    <span th:case="'GENERATED_PROMPT'">Сначала модель создаёт рабочий промпт, затем решает задачу по нему.</span>
+                    <span th:case="'EXPERT_PANEL'">Аналитик, инженер и критик предлагают и проверяют решения.</span>
+                </p>
+                <div class="approach-stats">
+                    <span>Входные <strong th:text="${result.usage.promptTokens}">0</strong></span>
+                    <span>Выходные <strong th:text="${result.usage.completionTokens}">0</strong></span>
+                    <span>Сообщений <strong th:text="${result.turns.size()}">0</strong></span>
+                </div>
+                <a class="approach-open" th:if="${result.approach.name() == 'DIRECT'}" th:href="@{/reasoning/approaches/direct}">Открыть цепочку общения <span>↗</span></a>
+                <a class="approach-open" th:if="${result.approach.name() == 'STEP_BY_STEP'}" th:href="@{/reasoning/approaches/step-by-step}">Открыть цепочку общения <span>↗</span></a>
+                <a class="approach-open" th:if="${result.approach.name() == 'GENERATED_PROMPT'}" th:href="@{/reasoning/approaches/generated-prompt}">Открыть цепочку общения <span>↗</span></a>
+                <a class="approach-open" th:if="${result.approach.name() == 'EXPERT_PANEL'}" th:href="@{/reasoning/approaches/expert-panel}">Открыть цепочку общения <span>↗</span></a>
+            </article>
+        </section>
+    </div>
+</main>
+<script>
+    const reasoningForm = document.getElementById('reasoningForm');
+    const compareButton = document.getElementById('compareButton');
+    const compareButtonLabel = document.getElementById('compareButtonLabel');
+    const compareButtonIcon = document.getElementById('compareButtonIcon');
+    const loadingPanel = document.getElementById('reasoningLoading');
+    const loadingMessage = document.getElementById('loadingMessage');
+    const loadingMessages = [
+        'Решаем задачу напрямую и пошагово…',
+        'Создаём улучшенный промпт и собираем мнения экспертов…',
+        'Ожидаем решения и считаем затраченные токены…',
+        'Готовим итоговое сравнение точности…'
+    ];
+
+    reasoningForm.addEventListener('submit', () => {
+        compareButton.disabled = true;
+        compareButton.setAttribute('aria-disabled', 'true');
+        compareButtonLabel.textContent = 'Сравниваем…';
+        compareButtonIcon.textContent = '•••';
+        loadingPanel.hidden = false;
+        document.querySelector('.reasoning-empty')?.setAttribute('hidden', '');
+        document.getElementById('reasoningResults')?.setAttribute('hidden', '');
+        document.querySelector('.reasoning-page').setAttribute('aria-busy', 'true');
+        loadingPanel.scrollIntoView({behavior: 'smooth', block: 'center'});
+
+        let messageIndex = 0;
+        window.setInterval(() => {
+            loadingMessage.textContent = loadingMessages[messageIndex % loadingMessages.length];
+            messageIndex++;
+        }, 3500);
+    });
+</script>
+</body>
+</html>

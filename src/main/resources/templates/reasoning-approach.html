@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${result.approach.displayName} + ' — цепочка общения'">Цепочка общения</title>
+    <style>
+        :root{color-scheme:dark;--bg:#0d1110;--panel:#181d1c;--line:#303a37;--text:#f2f5ed;--muted:#9ba7a1;--accent:#c9f56d}
+        *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 80% 0,rgba(201,245,109,.12),transparent 34rem),var(--bg);color:var(--text);font:16px/1.65 Inter,ui-sans-serif,system-ui,sans-serif}
+        .page{max-width:1060px;margin:auto;padding:32px 22px 64px}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:36px}.back,.download{border:1px solid var(--line);border-radius:10px;padding:9px 14px;color:var(--text);background:rgba(24,29,28,.85);text-decoration:none;font-weight:700;cursor:pointer}.download{color:#10150e;background:var(--accent);border-color:var(--accent)}
+        .eyebrow{margin:0 0 8px;color:var(--accent);font-size:.72rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.hero{margin-bottom:28px}.hero h1{margin:0 0 8px;font-size:clamp(2.1rem,6vw,4.5rem);line-height:1;letter-spacing:-.055em}.hero p{margin:0;color:var(--muted)}
+        .task{padding:20px 22px;margin-bottom:26px;border:1px solid var(--line);border-radius:16px;background:rgba(24,29,28,.82)}.task p:last-child{margin:0;white-space:pre-wrap}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.chip{padding:5px 10px;border:1px solid rgba(201,245,109,.25);border-radius:999px;color:var(--muted);font-size:.76rem}.chip strong{color:var(--accent)}
+        .conversation{display:flex;flex-direction:column;gap:22px}.turn{display:grid;grid-template-columns:46px minmax(0,1fr);gap:13px;max-width:88%}.turn.user{align-self:flex-end;grid-template-columns:minmax(0,1fr) 46px}.turn.user .avatar{grid-column:2}.turn.user .bubble{grid-column:1;grid-row:1}.avatar{width:46px;height:46px;display:grid;place-items:center;border:1px solid var(--line);border-radius:14px;background:#202625;color:var(--accent);font-weight:900}.bubble{min-width:0;padding:18px 20px;border:1px solid var(--line);border-radius:4px 17px 17px;background:var(--panel);box-shadow:0 14px 35px rgba(0,0,0,.14)}.user .bubble{border-color:rgba(201,245,109,.28);border-radius:17px 4px 17px 17px;background:rgba(201,245,109,.07)}.role{margin-bottom:10px;color:var(--accent);font-size:.7rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+        .markdown{overflow-wrap:anywhere}.markdown>:first-child{margin-top:0}.markdown>:last-child{margin-bottom:0}.markdown p{margin:0 0 1em}.markdown h1,.markdown h2,.markdown h3{margin:1.25em 0 .45em;line-height:1.25}.markdown ul,.markdown ol{padding-left:1.5em}.markdown li+li{margin-top:.35em}.markdown blockquote{margin:1em 0;padding:.2em 1em;border-left:3px solid var(--accent);color:var(--muted)}.markdown a{color:var(--accent)}.markdown code{padding:.15em .4em;border-radius:5px;background:#0d1211;color:#dfffa1}.markdown pre{overflow:auto;padding:15px;border:1px solid var(--line);border-radius:10px;background:#0c100f}.markdown pre code{padding:0;background:none;color:#e5ebe7}.markdown table{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:1em 0}.markdown th,.markdown td{padding:9px 12px;border:1px solid var(--line);text-align:left}.markdown th{background:#111615;color:var(--accent)}.plain-text{white-space:pre-wrap;overflow-wrap:anywhere}
+        @media(max-width:650px){.page{padding:20px 14px 44px}.toolbar{align-items:stretch}.turn,.turn.user{max-width:100%;grid-template-columns:36px minmax(0,1fr)}.turn.user{grid-template-columns:minmax(0,1fr) 36px}.avatar{width:36px;height:36px;border-radius:10px}.bubble{padding:15px}.download,.back{font-size:.8rem}}
+        @media print{body{background:#fff;color:#111}.toolbar{display:none}.task,.bubble{background:#fff!important;color:#111;border-color:#ccc;box-shadow:none}.role,.eyebrow,.chip strong{color:#486b00}.hero p,.chip{color:#555}}
+    </style>
+</head>
+<body>
+<main class="page">
+    <nav class="toolbar">
+        <a class="back" th:href="@{/reasoning}">← Все подходы</a>
+        <button class="download" type="button" id="downloadHtml">Скачать .html</button>
+    </nav>
+    <header class="hero">
+        <p class="eyebrow" th:text="'Подход ' + ${approachNumber} + ' · цепочка общения'">Подход</p>
+        <h1 th:text="${result.approach.displayName}">Подход</h1>
+        <p>Полная стенограмма запросов и ответов модели</p>
+    </header>
+    <section class="task">
+        <p class="eyebrow">Исходная задача</p>
+        <p th:text="${comparison.task}">Задача</p>
+        <div class="meta">
+            <span class="chip">Модель: <strong th:text="${comparison.model}">model</strong></span>
+            <span class="chip">Prompt: <strong th:text="${result.usage.promptTokens}">0</strong></span>
+            <span class="chip">Completion: <strong th:text="${result.usage.completionTokens}">0</strong></span>
+            <span class="chip">Всего: <strong th:text="${result.usage.totalTokens}">0</strong></span>
+            <span class="chip">Время: <strong th:text="${result.durationLabel}">0 с</strong></span>
+        </div>
+    </section>
+    <section class="conversation" aria-label="Стенограмма общения">
+        <article class="turn" th:each="turn : ${renderedTurns}" th:classappend="${turn.user} ? ' user' : ' assistant'">
+            <div class="avatar" th:text="${turn.user} ? 'Вы' : 'AI'">AI</div>
+            <div class="bubble">
+                <div class="role" th:text="${turn.role}">Ассистент</div>
+                <div class="plain-text" th:if="${turn.user}" th:text="${turn.content}"></div>
+                <div class="markdown" th:unless="${turn.user}" th:utext="${turn.html}"></div>
+            </div>
+        </article>
+    </section>
+</main>
+<script th:inline="javascript">
+    (() => {
+        const downloadButton = document.getElementById('downloadHtml');
+        if (downloadButton) downloadButton.addEventListener('click', () => {
+            const copy = document.documentElement.cloneNode(true); copy.querySelector('#downloadHtml').remove();
+            const blob = new Blob(['<!doctype html>\n' + copy.outerHTML], {type:'text/html;charset=utf-8'});
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+            const approachSlug = /*[[${approachSlug}]]*/ 'approach';
+            link.download = 'reasoning-' + approachSlug + '.html'; link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        });
+    })();
+</script>
+</body>
+</html>

@@ -6,7 +6,7 @@
 </head>
 <body>
 <main class="page-shell movie-page">
-    <nav class="top-nav"><a th:href="@{/}">Чат и параметры</a><a class="active" th:href="@{/movies}">Киноэксперт</a></nav>
+    <nav class="top-nav"><a th:href="@{/}">Чат и параметры</a><a class="active" th:href="@{/movies}">Киноэксперт</a><a th:href="@{/reasoning}">Лаборатория рассуждений</a></nav>
     <header class="hero movie-hero"><div><p class="eyebrow">AI Advent Challenge · Task 2</p><h1>Киноэксперт</h1><p class="subtitle">Найдите фильм в свободном диалоге, затем повторите разговор с контролем ответа.</p></div></header>
     <div class="alert alert-error" th:if="${error}" th:text="${error}"></div>
 
