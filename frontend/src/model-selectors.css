@@ -1,0 +1,39 @@
+.model-selectors {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.model-selectors label > span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.model-selectors select {
+  width: 100%;
+  height: 48px;
+  padding: 0 38px 0 13px;
+  border: 1px solid #cbd3df;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d2939;
+  font: inherit;
+  outline: none;
+}
+
+.model-selectors select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px #2878e820;
+}
+
+.model-selectors select:disabled {
+  background: #f5f6f8;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .model-selectors { grid-template-columns: 1fr; }
+}

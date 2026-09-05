@@ -1,15 +1,15 @@
-export async function runExperiment(payload) {
-  const response = await fetch('/api/temperature-experiments', {
+export async function runComparison(payload) {
+  const response = await fetch('/api/model-comparisons', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   })
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.message || 'Не удалось запустить эксперимент')
+  if (!response.ok) throw new Error(body.message || 'Не удалось запустить сравнение')
   return body
 }
 
-export async function loadExperimentConfig() {
-  const response = await fetch('/api/temperature-experiments/models')
+export async function loadModels() {
+  const response = await fetch('/api/model-comparisons/models')
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error('Не удалось загрузить настройки эксперимента')
+  if (!response.ok) throw new Error('Не удалось загрузить список моделей')
   return body
 }

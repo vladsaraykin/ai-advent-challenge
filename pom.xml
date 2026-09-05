@@ -15,7 +15,7 @@
     <artifactId>ai-advent-challenge</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>AI Advent Challenge</name>
-    <description>Day 4 OpenAI temperature comparison laboratory</description>
+    <description>Day 5 OpenAI model tier comparison laboratory</description>
 
     <properties>
         <java.version>21</java.version>

@@ -1,11 +1,15 @@
-# AI Advent Challenge — День 4
+# AI Advent Challenge — День 5
 
-Лаборатория сравнивает ответы OpenAI на один и тот же запрос при `temperature = 0`, `0.7` и `1.2`. Prompt, модель и лимит токенов одинаковы во всех трёх вызовах; одновременно выполняются не более двух вызовов.
+Лаборатория отправляет один и тот же запрос трём выбранным пользователем GPT-моделям OpenAI и показывает ответы без автоматической оценки качества.
+
+Для каждой позиции — «слабая», «средняя» и «сильная» — модель выбирается отдельно. Одинаковую модель выбрать дважды нельзя.
+
+Для каждой модели измеряются время ответа, входные/выходные токены и оценочная стоимость. Одновременно выполняются не более двух вызовов.
 
 ## Архитектура
 
 - Java 21 + Spring Boot: JSON REST API, orchestration и адаптер Spring AI/OpenAI.
-- React JavaScript + Vite: форма, состояния ожидания/ошибок, безопасный Markdown и памятка на русском.
+- React JavaScript + Vite: форма, состояния ожидания/ошибок, безопасный Markdown и сопоставимые карточки результатов.
 - Maven устанавливает Node, выполняет `npm ci`, собирает React и включает `frontend/dist` в runnable JAR.
 
 ## Требования
@@ -54,7 +58,41 @@ mvn test
 mvn package
 ```
 
-API: `POST /api/temperature-experiments` с JSON `{"prompt":"...","model":"gpt-4.1-mini","maxTokens":1000}`.
+API: `POST /api/model-comparisons` с JSON `{"prompt":"...","maxTokens":1000,"models":["gpt-4o-mini","gpt-5-mini","gpt-5.6-sol"]}`. Порядок массива соответствует карточкам «слабая», «средняя», «сильная». Каталог моделей и тарифов: `GET /api/model-comparisons/models`.
+
+Допустимый лимит ответа `maxTokens`: от 64 до 32768 токенов. Он передаётся OpenAI как `max_completion_tokens` и включает видимые выходные и reasoning-токены.
+
+## Логи сравнений
+
+Каждое сравнение получает `requestId`. По нему в логах связываются входящий запрос, отдельные вызовы OpenAI и итоговая статистика. Preview запроса приводится к одной строке и ограничивается 1000 символами, секреты и тела ошибок OpenAI не логируются.
+
+На виртуальной машине смотреть поток логов можно так:
+
+```bash
+sudo journalctl -u ai-advent-challenge -f
+```
+
+Только события сравнений и вызовов OpenAI:
+
+```bash
+sudo journalctl -u ai-advent-challenge --since today | grep -E 'comparison_|openai_call_'
+```
+
+Итоговая запись `comparison_completed` содержит фактическое число начатых запросов к OpenAI (`outboundCalls`), успешные и неуспешные вызовы, общее время, токены и оценочную стоимость.
+
+Стоимость рассчитывается по токенам на основании стандартных тарифов OpenAI за 1 млн токенов, зафиксированных для задания. Источник тарифов и перечня моделей: <https://developers.openai.com/api/docs/models> (проверено 05.09.2026).
+
+| Модель | Входные токены | Выходные токены |
+| --- | ---: | ---: |
+| GPT-4o Mini | $0.15 | $0.60 |
+| GPT-4.1 Mini | $0.40 | $1.60 |
+| GPT-4.1 | $2.00 | $8.00 |
+| GPT-5 Nano | $0.05 | $0.40 |
+| GPT-5 Mini | $0.25 | $2.00 |
+| GPT-5 | $1.25 | $10.00 |
+| GPT-5.6 Luna | $0.20 | $1.20 |
+| GPT-5.6 Terra | $2.00 | $12.00 |
+| GPT-5.6 Sol | $4.00 | $20.00 |
 
 ## Production-сборка
 
@@ -122,7 +160,7 @@ ssh cloudvm '
   sudo systemctl is-active nginx
   sudo ss -ltn "sport = :8080"
   curl --fail --silent http://127.0.0.1/
-  curl --fail --silent http://127.0.0.1/api/temperature-experiments/models
+  curl --fail --silent http://127.0.0.1/api/model-comparisons/models
   sudo journalctl -u ai-advent-challenge --since "5 minutes ago" \
     --no-pager -p err -q
 '

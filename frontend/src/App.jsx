@@ -1,50 +1,50 @@
 import { useEffect, useState } from 'react'
-import { loadExperimentConfig, runExperiment } from './api'
+import { loadModels, runComparison } from './api'
+import ComparisonNote from './components/ComparisonNote'
 import ResultCard from './components/ResultCard'
-import TemperatureGuide from './components/TemperatureGuide'
+import './model-selectors.css'
 
-export default function App({ submit = runExperiment, loadConfig = loadExperimentConfig }) {
+export default function App({ submit = runComparison, getModels = loadModels }) {
   const [prompt, setPrompt] = useState('')
-  const [config, setConfig] = useState({ models: [], temperatures: [] })
-  const [model, setModel] = useState('')
   const [maxTokens, setMaxTokens] = useState(1000)
+  const [models, setModels] = useState([])
+  const [selectedModels, setSelectedModels] = useState(['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.6-sol'])
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    loadConfig().then(loaded => {
-      setConfig(loaded)
-      setModel(current => current || loaded.models[0] || '')
-    }).catch(exception => setError(exception.message))
-  }, [loadConfig])
+  useEffect(() => { getModels().then(setModels).catch(exception => setError(exception.message)) }, [getModels])
 
   async function onSubmit(event) {
     event.preventDefault()
-    if (!prompt.trim()) { setError('Введите запрос для эксперимента'); return }
+    if (!prompt.trim()) { setError('Введите запрос для сравнения'); return }
+    if (new Set(selectedModels).size !== 3) { setError('Выберите три разные модели'); return }
     setLoading(true); setError(''); setResult(null)
-    try { setResult(await submit({ prompt: prompt.trim(), model, maxTokens: Number(maxTokens) })) }
+    try { setResult(await submit({ prompt: prompt.trim(), maxTokens: Number(maxTokens), models: selectedModels })) }
     catch (exception) { setError(exception.message) }
     finally { setLoading(false) }
   }
 
+  const levels = ['WEAK', 'MEDIUM', 'STRONG']
+  const labels = ['Слабая модель', 'Средняя модель', 'Сильная модель']
+  const cards = result?.results ?? selectedModels.map((modelId, index) => ({
+    ...models.find(model => model.model === modelId), level: levels[index]
+  })).filter(model => model.model)
+  const updateModel = (index, model) => setSelectedModels(current => current.map((value, itemIndex) => itemIndex === index ? model : value))
   return <main>
-    <header className="topbar"><a href="/" className="brand">AI Advent <span>04</span></a><span>Эксперимент с OpenAI</span></header>
-    <section className="intro"><div><h1>Лаборатория температуры</h1><p>Один запрос — три характера ответа. Остальные параметры останутся неизменными.</p></div>
-      <div className="temperature-scale" aria-hidden="true"><span>точнее</span><i /><span>свободнее</span></div></section>
+    <header className="topbar"><a href="/" className="brand">Лаборатория моделей</a><span>Один запрос — три уровня возможностей</span></header>
+    <section className="intro"><h1>Сравните возможности моделей</h1><p>Выберите три GPT-модели OpenAI и отправьте им один и тот же запрос.</p></section>
     <form onSubmit={onSubmit} className="workspace">
-      <label className="prompt-field"><span>Запрос</span><textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows="5" maxLength="12000" disabled={loading} placeholder="Например: придумай три названия для сервиса доставки книг и объясни каждое" /></label>
-      <div className="controls"><label><span>Модель</span><select value={model} onChange={e => setModel(e.target.value)} disabled={loading || !model}>{config.models.map(item => <option key={item}>{item}</option>)}</select></label>
-        <label><span>Лимит токенов</span><input type="number" min="64" max="4096" value={maxTokens} onChange={e => setMaxTokens(e.target.value)} disabled={loading} /></label>
-        <button disabled={loading || !model}>{loading ? 'Эксперимент запущен' : 'Запустить эксперимент'}<b aria-hidden="true">→</b></button></div>
-      {loading && <div className="progress" role="status" aria-live="polite"><i /><span>Выполняем три запроса, не более двух одновременно…</span></div>}
+      <label className="prompt-field"><span>Введите ваш запрос</span><textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows="5" maxLength="12000" disabled={loading} placeholder="Например: объясни принцип градиентного спуска простыми словами и приведи короткий пример" /></label>
+      <div className="controls"><label><span>Лимит ответа</span><input type="number" min="64" max="32768" value={maxTokens} onChange={event => setMaxTokens(event.target.value)} disabled={loading} /></label>
+        <button disabled={loading || models.length === 0}>{loading ? 'Сравнение выполняется' : 'Сравнить модели'}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg></button></div>
+      <div className="model-selectors" aria-label="Модели для сравнения">{levels.map((level, index) => <label key={level}><span>{labels[index]}</span><select aria-label={labels[index]} value={selectedModels[index]} onChange={event => updateModel(index, event.target.value)} disabled={loading}>{models.map(model => <option key={model.model} value={model.model}>{model.displayName} · ${model.inputUsdPerMillion}/${model.outputUsdPerMillion}</option>)}</select></label>)}</div>
+      <p className="form-hint">Вы оцениваете ответы самостоятельно. Все три модели получают одинаковый запрос и лимит ответа.</p>
+      {loading && <div className="progress" role="status" aria-live="polite"><i /><span>Запрос отправлен трём моделям. Одновременно работают не более двух…</span></div>}
       {error && <p className="form-error" role="alert">{error}</p>}
     </form>
-    {(loading || result) && <section className="results" aria-labelledby="results-title"><div className="section-title"><h2 id="results-title">Три версии ответа</h2>{result && <span>Общее время: {(result.durationMs / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} сек.</span>}</div>
-      <div className="result-grid">{(result?.results ?? config.temperatures).map(item => {
-        const temperature = typeof item === 'number' ? item : item.temperature
-        return <ResultCard key={temperature} temperature={temperature} pending={loading} result={typeof item === 'number' ? null : item} />
-      })}</div></section>}
-    <TemperatureGuide />
+    {(models.length > 0 || result) && <section className="results" aria-labelledby="results-title"><div className="section-title"><h2 id="results-title">Три версии ответа</h2>{result && <div className="total"><span>Общее время: {(result.durationMs / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} сек.</span><span>Всего токенов: {result.totalUsage.totalTokens.toLocaleString('ru-RU')}</span><span>Итого: ${Number(result.estimatedTotalCostUsd).toFixed(6)}</span></div>}</div>
+      <div className="result-grid">{cards.map(item => <ResultCard key={(item.tier ?? item).model} tier={item.tier ?? item} result={item.status ? item : null} pending={loading} />)}</div></section>}
+    <ComparisonNote />
   </main>
 }
