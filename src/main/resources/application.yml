@@ -10,8 +10,16 @@ spring:
           model: ${OPENAI_MODEL:gpt-4.1-mini}
 
 app:
+  agents:
+    location: ${AGENT_CONFIG_LOCATION:classpath:agents/*.yaml}
+  chats:
+    directory: ${CHAT_DATA_DIR:data/agent-chats}
   openai:
     proxy:
       enabled: ${OPENAI_PROXY_ENABLED:false}
       host: ${OPENAI_PROXY_HOST:127.0.0.1}
       port: ${OPENAI_PROXY_PORT:10809}
+
+logging:
+  pattern:
+    level: "%5p [requestId=%X{requestId} chatId=%X{chatId}]"

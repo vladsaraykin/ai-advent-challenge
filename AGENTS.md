@@ -4,15 +4,18 @@
 
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
-- The Day 5 experiment sends the same prompt and output-token limit to exactly three server-owned model tiers: weak, medium, and strong.
+- Day 6 provides independently configured agents and multiple isolated, persistent chats per agent.
 
 ## Architecture
 
 - Use Java 21 and Spring Boot for a JSON REST API, and React JavaScript with Vite for the UI.
 - Separate HTTP DTOs/controllers, application orchestration, domain values, and the Spring AI/OpenAI adapter.
 - Use immutable Java records for DTOs/domain results and constructor injection for components.
-- Model IDs, tiers, and token prices are server-owned constants. Preserve weak/medium/strong result order independently of completion order.
-- Treat partial provider failures as first-class results; do not discard successful generations.
+- Agent definitions, model IDs, system prompts and limits are server-owned YAML configuration, one file per agent.
+- An Agent encapsulates context construction, generation and response handling; controllers must not call the provider.
+- Send only the selected chat's history and its agent's system prompt to the provider.
+- Persist completed turns atomically. Failed calls must preserve earlier messages and allow retry without duplicated turns.
+- Do not silently trim history; report the configured context limit explicitly.
 - Bound concurrency and shut executors down cleanly.
 
 ## Frontend
@@ -26,8 +29,8 @@
 
 - Maven must produce one runnable JAR containing the compiled React application.
 - Keep `package-lock.json` committed and use `npm ci` for reproducible frontend builds.
-- Backend tests cover validation, exact model tiers, identical prompts/limits, bounded concurrency, stable ordering, token/time/cost metadata, and partial/all failures.
-- Frontend tests cover empty, loading, success, partial failure, safe Markdown, and metric rendering.
+- Backend tests cover YAML validation, extensible agents, context role/order, cross-chat and cross-agent isolation, restart persistence, retry, bounded concurrency and provider failures.
+- Frontend tests cover agent/chat switching, empty/loading/success/error states, retry drafts, safe Markdown and metric rendering.
 - Run focused tests during development, then `npm test`, `npm run build`, `mvn test`, and `mvn package` for broad changes.
 
 ## Safety and operations

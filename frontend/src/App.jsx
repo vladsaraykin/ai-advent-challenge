@@ -1,50 +1,118 @@
-import { useEffect, useState } from 'react'
-import { loadModels, runComparison } from './api'
-import ComparisonNote from './components/ComparisonNote'
-import ResultCard from './components/ResultCard'
-import './model-selectors.css'
+import { useEffect, useRef, useState } from 'react'
+import { agentApi } from './api'
+import { newMessageId } from './messageId'
+import MessageList from './components/MessageList'
+import ChatSidebar from './components/ChatSidebar'
+import MessageComposer from './components/MessageComposer'
 
-export default function App({ submit = runComparison, getModels = loadModels }) {
-  const [prompt, setPrompt] = useState('')
-  const [maxTokens, setMaxTokens] = useState(1000)
-  const [models, setModels] = useState([])
-  const [selectedModels, setSelectedModels] = useState(['gpt-4o-mini', 'gpt-5-mini', 'gpt-5.6-sol'])
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(false)
+const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
+const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
+
+export default function App({ api = agentApi }) {
+  const [agents, setAgents] = useState([])
+  const [agentId, setAgentId] = useState('')
+  const [chats, setChats] = useState([])
+  const [chat, setChat] = useState(null)
+  const [drafts, setDrafts] = useState({})
+  const [pending, setPending] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [reload, setReload] = useState(0)
+  const retry = useRef(null)
+  const busyRef = useRef(false)
+  const agent = agents.find(item => item.id === agentId)
+  const draftKey = chat ? `${agentId}/${chat.id}` : agentId
+  const draft = drafts[draftKey] || ''
 
-  useEffect(() => { getModels().then(setModels).catch(exception => setError(exception.message)) }, [getModels])
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    api.agents().then(items => {
+      if (!active) return
+      setAgents(items)
+      const selected = items.find(item => item.id === recalled('agent-lab.agent')) || items[0]
+      if (selected) setAgentId(selected.id)
+      else { setError('Нет настроенных агентов'); setLoading(false) }
+    }).catch(exception => { if (active) { setError(exception.message); setLoading(false) } })
+    return () => { active = false }
+  }, [api, reload])
 
-  async function onSubmit(event) {
-    event.preventDefault()
-    if (!prompt.trim()) { setError('Введите запрос для сравнения'); return }
-    if (new Set(selectedModels).size !== 3) { setError('Выберите три разные модели'); return }
-    setLoading(true); setError(''); setResult(null)
-    try { setResult(await submit({ prompt: prompt.trim(), maxTokens: Number(maxTokens), models: selectedModels })) }
+  useEffect(() => {
+    if (!agentId) return
+    let active = true
+    setLoading(true); setError(''); setChats([]); setChat(null)
+    remember('agent-lab.agent', agentId)
+    api.chats(agentId).then(async items => {
+      if (!active) return
+      setChats(items)
+      const selected = items.find(item => item.id === recalled(`agent-lab.chat.${agentId}`)) || items[0]
+      if (selected) {
+        const loaded = await api.chat(agentId, selected.id)
+        if (active) setChat(loaded)
+      }
+    }).catch(exception => { if (active) setError(exception.message) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [agentId, api, reload])
+
+  async function openChat(id) {
+    if (busyRef.current || loading) return
+    setLoading(true); setError('')
+    try { setChat(await api.chat(agentId, id)); remember(`agent-lab.chat.${agentId}`, id) }
     catch (exception) { setError(exception.message) }
     finally { setLoading(false) }
   }
 
-  const levels = ['WEAK', 'MEDIUM', 'STRONG']
-  const labels = ['Слабая модель', 'Средняя модель', 'Сильная модель']
-  const cards = result?.results ?? selectedModels.map((modelId, index) => ({
-    ...models.find(model => model.model === modelId), level: levels[index]
-  })).filter(model => model.model)
-  const updateModel = (index, model) => setSelectedModels(current => current.map((value, itemIndex) => itemIndex === index ? model : value))
-  return <main>
-    <header className="topbar"><a href="/" className="brand">Лаборатория моделей</a><span>Один запрос — три уровня возможностей</span></header>
-    <section className="intro"><h1>Сравните возможности моделей</h1><p>Выберите три GPT-модели OpenAI и отправьте им один и тот же запрос.</p></section>
-    <form onSubmit={onSubmit} className="workspace">
-      <label className="prompt-field"><span>Введите ваш запрос</span><textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows="5" maxLength="12000" disabled={loading} placeholder="Например: объясни принцип градиентного спуска простыми словами и приведи короткий пример" /></label>
-      <div className="controls"><label><span>Лимит ответа</span><input type="number" min="64" max="32768" value={maxTokens} onChange={event => setMaxTokens(event.target.value)} disabled={loading} /></label>
-        <button disabled={loading || models.length === 0}>{loading ? 'Сравнение выполняется' : 'Сравнить модели'}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg></button></div>
-      <div className="model-selectors" aria-label="Модели для сравнения">{levels.map((level, index) => <label key={level}><span>{labels[index]}</span><select aria-label={labels[index]} value={selectedModels[index]} onChange={event => updateModel(index, event.target.value)} disabled={loading}>{models.map(model => <option key={model.model} value={model.model}>{model.displayName} · ${model.inputUsdPerMillion}/${model.outputUsdPerMillion}</option>)}</select></label>)}</div>
-      <p className="form-hint">Вы оцениваете ответы самостоятельно. Все три модели получают одинаковый запрос и лимит ответа.</p>
-      {loading && <div className="progress" role="status" aria-live="polite"><i /><span>Запрос отправлен трём моделям. Одновременно работают не более двух…</span></div>}
-      {error && <p className="form-error" role="alert">{error}</p>}
-    </form>
-    {(models.length > 0 || result) && <section className="results" aria-labelledby="results-title"><div className="section-title"><h2 id="results-title">Три версии ответа</h2>{result && <div className="total"><span>Общее время: {(result.durationMs / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} сек.</span><span>Всего токенов: {result.totalUsage.totalTokens.toLocaleString('ru-RU')}</span><span>Итого: ${Number(result.estimatedTotalCostUsd).toFixed(6)}</span></div>}</div>
-      <div className="result-grid">{cards.map(item => <ResultCard key={(item.tier ?? item).model} tier={item.tier ?? item} result={item.status ? item : null} pending={loading} />)}</div></section>}
-    <ComparisonNote />
+  function updateChat(updated) {
+    setChat(updated)
+    remember(`agent-lab.chat.${agentId}`, updated.id)
+    setChats(current => [{ id: updated.id, title: updated.title, updatedAt: updated.updatedAt,
+      messageCount: updated.messages.length }, ...current.filter(item => item.id !== updated.id)])
+  }
+
+  async function createChat() {
+    if (busyRef.current || loading) return
+    setLoading(true); setError('')
+    try { updateChat(await api.create(agentId)) }
+    catch (exception) { setError(exception.message) }
+    finally { setLoading(false) }
+  }
+
+  async function send(event) {
+    event.preventDefault()
+    if (busyRef.current || loading || !agent) return
+    const content = draft.trim()
+    if (!content) { setError('Введите сообщение'); return }
+    busyRef.current = true; setPending(true); setError('')
+    try {
+      const current = chat || await api.create(agentId)
+      if (!chat) updateChat(current)
+      const key = `${agentId}/${current.id}`
+      setDrafts(values => ({ ...values, [draftKey]: '', [key]: draft }))
+      if (!retry.current || retry.current.chatId !== current.id || retry.current.content !== content) {
+        retry.current = { chatId: current.id, content, messageId: newMessageId() }
+      }
+      updateChat(await api.send(agentId, current.id, { messageId: retry.current.messageId, content }))
+      setDrafts(values => ({ ...values, [key]: '' }))
+      retry.current = null
+    } catch (exception) { setError(exception.message) }
+    finally { busyRef.current = false; setPending(false) }
+  }
+
+  return <main className="app-shell">
+    <ChatSidebar agents={agents} agentId={agentId} chats={chats} chatId={chat?.id}
+      disabled={pending || loading} onAgent={setAgentId} onChat={openChat} onCreate={createChat} />
+    <section className="conversation" aria-label="Диалог с агентом">
+      <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>
+        <p>{agent?.description || 'Выберите помощника для своей задачи'}</p></div>
+        {agent && <span className="model-name">{agent.model}</span>}</header>
+      {loading ? <div className="loading-state" role="status">Загружаем чаты…</div>
+        : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} draft={draft} />}
+      {error && <div className="error-banner" role="alert"><span>{error}</span>
+        {!pending && <button type="button" onClick={() => { setError(''); setReload(value => value + 1) }}>Обновить</button>}</div>}
+      <MessageComposer draft={draft} onChange={value => setDrafts(current => ({ ...current, [draftKey]: value }))}
+        onSubmit={send} pending={pending} disabled={loading || !agent} />
+      <p className="context-note">Каждый чат хранит отдельную историю. Агент учитывает только текущий диалог.</p>
+    </section>
   </main>
 }
