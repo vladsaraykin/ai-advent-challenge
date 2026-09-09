@@ -5,6 +5,7 @@ import com.github.vladsaraykin.aichat.agent.application.*;
 import com.github.vladsaraykin.aichat.agent.infrastructure.*;
 import com.github.vladsaraykin.aichat.agent.domain.*;
 import java.nio.file.Path;
+import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,13 +18,18 @@ class AgentControllerTest {
     @TempDir Path directory;
     @Test void servesAgentsAndValidatesRequestsAndChatOwnership() throws Exception {
         var registry = new AgentRegistry((definition, messages) -> new ConversationModel.Reply("ok",
-                new ChatMessage.Metrics(definition.model(), 12, 5, 5, 10, "stop")), "classpath:agents/*.yaml");
+                new ChatMessage.Metrics(definition.model(), 12, 2, 0, 3, 5, 0, 5, 10,
+                        new BigDecimal("0.00000200"), new BigDecimal("0.00000800"),
+                        new BigDecimal("0.00001000"), "stop")), "classpath:agents/*.yaml");
         var service = new ChatService(registry, new FileChatRepository(directory.toString()));
         var mvc = MockMvcBuilders.standaloneSetup(new AgentController(service))
                 .setControllerAdvice(new ChatExceptionHandler()).build();
         mvc.perform(get("/api/agents")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$[0].id").value("architect"))
-                .andExpect(jsonPath("$[0].systemPrompt").doesNotExist());
+                .andExpect(jsonPath("$[2].id").value("techno"))
+                .andExpect(jsonPath("$[0].systemPrompt").doesNotExist())
+                .andExpect(jsonPath("$[0].pricing").doesNotExist());
         mvc.perform(post("/api/agents/chef/chats")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.messages").isEmpty());
         Chat chat = service.create("architect");
@@ -33,7 +39,8 @@ class AgentControllerTest {
         mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"messageId\":\"" + UUID.randomUUID() + "\",\"content\":\"Привет\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.messages.length()").value(2))
-                .andExpect(jsonPath("$.messages[1].content").value("ok"));
+                .andExpect(jsonPath("$.messages[1].content").value("ok"))
+                .andExpect(jsonPath("$.messages[1].metrics.totalCostUsd").value(0.00001000));
         mvc.perform(get("/api/agents/chef/chats/" + chat.id())).andExpect(status().isNotFound());
         mvc.perform(get("/api/agents/architect/chats/not-a-uuid")).andExpect(status().isBadRequest());
     }

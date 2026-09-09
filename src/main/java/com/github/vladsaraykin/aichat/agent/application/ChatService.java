@@ -62,8 +62,8 @@ public class ChatService {
             ChatMessage answer = agent.answer(chat.messages(), user);
             Chat updated = chat.append(user, answer);
             repository.save(updated);
-            log.info("agent_response agentId={} chatId={} requestId={} totalTokens={}",
-                    agentId, chatId, messageId, answer.metrics().totalTokens());
+            log.info("agent_response agentId={} chatId={} requestId={} totalTokens={} costUsd={}",
+                    agentId, chatId, messageId, answer.metrics().totalTokens(), answer.metrics().totalCostUsd());
             return updated;
         } catch (ChatFailure exception) {
             log.warn("agent_request_failed agentId={} chatId={} requestId={} kind={}",

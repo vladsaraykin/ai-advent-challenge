@@ -4,7 +4,7 @@
 
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
-- Day 6 provides independently configured agents and multiple isolated, persistent chats per agent.
+- Day 8 extends independently configured agents with per-call token and USD cost accounting.
 
 ## Architecture
 
@@ -12,6 +12,7 @@
 - Separate HTTP DTOs/controllers, application orchestration, domain values, and the Spring AI/OpenAI adapter.
 - Use immutable Java records for DTOs/domain results and constructor injection for components.
 - Agent definitions, model IDs, system prompts and limits are server-owned YAML configuration, one file per agent.
+- Input, cached-input and output prices are server-owned YAML values and must not be trusted from the browser.
 - An Agent encapsulates context construction, generation and response handling; controllers must not call the provider.
 - Send only the selected chat's history and its agent's system prompt to the provider.
 - Persist completed turns atomically. Failed calls must preserve earlier messages and allow retry without duplicated turns.
@@ -29,8 +30,8 @@
 
 - Maven must produce one runnable JAR containing the compiled React application.
 - Keep `package-lock.json` committed and use `npm ci` for reproducible frontend builds.
-- Backend tests cover YAML validation, extensible agents, context role/order, cross-chat and cross-agent isolation, restart persistence, retry, bounded concurrency and provider failures.
-- Frontend tests cover agent/chat switching, empty/loading/success/error states, retry drafts, safe Markdown and metric rendering.
+- Backend tests cover YAML and pricing validation, token/cost calculation, extensible agents, context role/order, cross-chat and cross-agent isolation, restart persistence, retry, bounded concurrency and provider failures.
+- Frontend tests cover agent/chat switching, empty/loading/success/error states, retry drafts, safe Markdown, legacy history and token/cost metric rendering.
 - Run focused tests during development, then `npm test`, `npm run build`, `mvn test`, and `mvn package` for broad changes.
 
 ## Safety and operations

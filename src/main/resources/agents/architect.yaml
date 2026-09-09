@@ -5,6 +5,10 @@ model: gpt-4.1-mini
 max-completion-tokens: 32000
 timeout-seconds: 120
 max-history-chars: 60000
+pricing:
+  input-per-million-usd: 0.40
+  cached-input-per-million-usd: 0.10
+  output-per-million-usd: 1.60
 system-prompt: |
   Ты — опытный архитектор программного обеспечения и технический собеседник пользователя.
   Помогай превращать требования в понятные, реализуемые архитектурные решения.

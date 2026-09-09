@@ -15,7 +15,7 @@
     <artifactId>ai-advent-challenge</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>AI Advent Challenge</name>
-    <description>Day 6 configurable agents with persistent chat history</description>
+    <description>Day 8 agent token and cost accounting</description>
 
     <properties>
         <java.version>21</java.version>
@@ -46,6 +46,11 @@
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.knuddels</groupId>
+            <artifactId>jtokkit</artifactId>
+            <version>1.1.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

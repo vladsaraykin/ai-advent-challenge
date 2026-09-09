@@ -2,7 +2,9 @@ package com.github.vladsaraykin.aichat.agent.infrastructure;
 
 import com.github.vladsaraykin.aichat.agent.application.*;
 import com.github.vladsaraykin.aichat.agent.domain.AgentDefinition;
+import com.github.vladsaraykin.aichat.agent.domain.TokenPricing;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
@@ -29,7 +31,10 @@ public class AgentRegistry implements AgentCatalog {
                     Integer.parseInt(properties.getProperty("max-completion-tokens", "4096")),
                     properties.getProperty("reasoning-effort"),
                     Integer.parseInt(properties.getProperty("timeout-seconds", "120")),
-                    Integer.parseInt(properties.getProperty("max-history-chars", "60000")));
+                    Integer.parseInt(properties.getProperty("max-history-chars", "60000")),
+                    new TokenPricing(requiredDecimal(properties, "pricing.input-per-million-usd"),
+                            requiredDecimal(properties, "pricing.cached-input-per-million-usd"),
+                            requiredDecimal(properties, "pricing.output-per-million-usd")));
             if (loaded.putIfAbsent(definition.id(), new ConfiguredAgent(definition, model)) != null) {
                 throw new IllegalArgumentException("Duplicate agent id: " + definition.id());
             }
@@ -44,5 +49,12 @@ public class AgentRegistry implements AgentCatalog {
         Agent agent = agents.get(id);
         if (agent == null) throw new ChatFailure(ChatFailure.Kind.NOT_FOUND, "Агент не найден");
         return agent;
+    }
+
+    private static BigDecimal requiredDecimal(Properties properties, String key) {
+        String value = properties.getProperty(key);
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing agent setting: " + key);
+        try { return new BigDecimal(value); }
+        catch (NumberFormatException exception) { throw new IllegalArgumentException("Invalid agent setting: " + key); }
     }
 }

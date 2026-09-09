@@ -4,6 +4,7 @@ import com.github.vladsaraykin.aichat.agent.application.*;
 import com.github.vladsaraykin.aichat.agent.domain.*;
 import com.github.vladsaraykin.aichat.agent.infrastructure.*;
 import java.nio.file.*;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -15,7 +16,10 @@ class ChatServiceTest {
     @TempDir Path directory;
     private record Call(AgentDefinition definition, List<ChatMessage> history) { }
     private static ConversationModel.Reply reply() {
-        return new ConversationModel.Reply("Ответ", new ChatMessage.Metrics("gpt-4.1-mini", 42, 10, 20, 30, "stop"));
+        return new ConversationModel.Reply("Ответ", new ChatMessage.Metrics("gpt-4.1-mini", 42,
+                3, 7, 5, 10, 0, 20, 30,
+                new BigDecimal("0.00000400"), new BigDecimal("0.00003200"),
+                new BigDecimal("0.00003600"), "stop"));
     }
     private ChatService service(ConversationModel model) throws Exception {
         return new ChatService(new AgentRegistry(model, "classpath:agents/*.yaml"), new FileChatRepository(directory.toString()));
@@ -93,7 +97,8 @@ class ChatServiceTest {
     @Test void contextLimitDoesNotSilentlyDropEarlierHistory() throws Exception {
         AtomicInteger requests = new AtomicInteger();
         var definition = new AgentDefinition("test", "Test", "Description", "gpt-4.1-mini", "System",
-                100, null, 30, 1000);
+                100, null, 30, 1000,
+                new TokenPricing(new BigDecimal("0.40"), new BigDecimal("0.10"), new BigDecimal("1.60")));
         var agent = new ConfiguredAgent(definition, (config, messages) -> { requests.incrementAndGet(); return reply(); });
         var user = new ChatMessage(UUID.randomUUID(), ChatMessage.Role.USER, "x".repeat(1001), java.time.Instant.now(), null);
         assertThatThrownBy(() -> agent.answer(List.of(), user)).hasMessageContaining("лимит контекста");
@@ -133,5 +138,20 @@ class ChatServiceTest {
         Files.writeString(file, "invalid json");
         assertThatThrownBy(() -> repository.get("architect", chat.id())).isInstanceOf(ChatFailure.class);
         assertThat(Files.readString(file)).isEqualTo("invalid json");
+    }
+
+    @Test void readsLegacyMetricsWithoutInventingHistoricalCost() throws Exception {
+        UUID chatId = UUID.randomUUID();
+        Path agentDirectory = Files.createDirectories(directory.resolve("architect"));
+        Files.writeString(agentDirectory.resolve(chatId + ".json"), """
+                {"id":"%s","agentId":"architect","title":"Legacy",
+                 "createdAt":"2026-09-07T20:17:25Z","updatedAt":"2026-09-07T20:17:30Z",
+                 "messages":[{"id":"%s","role":"ASSISTANT","content":"Old answer",
+                 "createdAt":"2026-09-07T20:17:30Z","metrics":{"model":"gpt-4.1-mini",
+                 "durationMs":100,"promptTokens":10,"completionTokens":5,"totalTokens":15,"finishReason":"stop"}}]}
+                """.formatted(chatId, UUID.randomUUID()));
+        Chat loaded = new FileChatRepository(directory.toString()).get("architect", chatId);
+        assertThat(loaded.messages().getFirst().metrics().totalTokens()).isEqualTo(15);
+        assertThat(loaded.messages().getFirst().metrics().totalCostUsd()).isNull();
     }
 }

@@ -15,7 +15,11 @@ const answer = (chat, text = '**Ответ агента**') => ({
   ...chat, title: 'Мой вопрос', messages: [
     { id: 'user', role: 'USER', content: 'Мой вопрос' },
     { id: 'answer', role: 'ASSISTANT', content: text,
-      metrics: { model: 'gpt-4.1-mini', durationMs: 1250, totalTokens: 90, promptTokens: 30, completionTokens: 60, finishReason: 'stop' } }
+      metrics: { model: 'gpt-4.1-mini', durationMs: 1250,
+        currentMessageTokens: 4, historyTokens: 0, systemPromptTokens: 10,
+        totalTokens: 90, promptTokens: 30, cachedPromptTokens: 0, completionTokens: 60,
+        inputCostUsd: 0.000012, outputCostUsd: 0.000096, totalCostUsd: 0.000108,
+        finishReason: 'stop' } }
   ]
 })
 const makeApi = () => ({
@@ -52,7 +56,11 @@ describe('agent conversations', () => {
     await waitFor(() => expect(api.send).toHaveBeenCalledTimes(1))
     resolve(answer(makeChat('one')))
     expect(await screen.findByText('Ответ агента')).toBeInTheDocument()
-    expect(screen.getByText(/90 токенов/)).toBeInTheDocument()
+    expect(within(screen.getByRole('log')).getByText(/90 токенов/)).toBeInTheDocument()
+    expect(screen.getByText(/Текущий запрос: 4/)).toBeInTheDocument()
+    expect(screen.getByText(/Стоимость: \$0\.000108/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('всего 90 токенов')
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('$0.000108')
     expect(screen.getByLabelText('Ваше сообщение')).toHaveValue('')
     expect(api.send.mock.calls[0].slice(0, 2)).toEqual(['architect', 'one'])
     expect(api.send.mock.calls[0][2].content).toBe('Мой вопрос')
@@ -106,5 +114,21 @@ describe('agent conversations', () => {
 
   it('generates valid message IDs on an HTTP origin without randomUUID', () => {
     expect(newMessageId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  })
+
+  it('keeps legacy token metrics and marks their historical cost as unavailable', async () => {
+    const api = makeApi()
+    const chat = makeChat('legacy', 'architect', 'Старый чат', [{
+      id: 'old', role: 'ASSISTANT', content: 'Старый ответ',
+      metrics: { model: 'gpt-4.1-mini', durationMs: 100, promptTokens: 10,
+        completionTokens: 5, totalTokens: 15, finishReason: 'stop' }
+    }])
+    api.chats.mockResolvedValue([chat])
+    api.chat.mockResolvedValue(chat)
+    render(<App api={api} />)
+    await screen.findByText('Старый ответ')
+    expect(screen.getByText(/Стоимость: нет данных/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' }))
+      .toHaveTextContent('Стоимость старых вызовов недоступна')
   })
 })

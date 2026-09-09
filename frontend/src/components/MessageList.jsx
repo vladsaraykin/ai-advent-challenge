@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { formatTokens, formatUsd } from '../usage'
 
 export default function MessageList({ messages, agent, pending, draft }) {
   const bottom = useRef(null)
@@ -16,8 +17,18 @@ export default function MessageList({ messages, agent, pending, draft }) {
       <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{message.content}</ReactMarkdown></div>
       {message.metrics && <footer>
         {message.metrics.model} · {(message.metrics.durationMs / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} сек. ·
-        {' '}{message.metrics.totalTokens.toLocaleString('ru-RU')} токенов
-        <span>Вход: {message.metrics.promptTokens.toLocaleString('ru-RU')} · Выход: {message.metrics.completionTokens.toLocaleString('ru-RU')}</span>
+        {' '}{formatTokens(message.metrics.totalTokens)} токенов
+        {message.metrics.currentMessageTokens != null && <span>
+          Текущий запрос: {formatTokens(message.metrics.currentMessageTokens)} ·
+          {' '}История: {formatTokens(message.metrics.historyTokens)} ·
+          {' '}Системный промпт: {formatTokens(message.metrics.systemPromptTokens)}
+        </span>}
+        <span>Вход API: {formatTokens(message.metrics.promptTokens)}
+          {message.metrics.cachedPromptTokens > 0 && <> · из кэша: {formatTokens(message.metrics.cachedPromptTokens)}</>}
+          {' '}· Ответ: {formatTokens(message.metrics.completionTokens)}</span>
+        <span className="message-cost">Стоимость: {message.metrics.totalCostUsd != null
+          ? `${formatUsd(message.metrics.totalCostUsd)} (вход ${formatUsd(message.metrics.inputCostUsd)} · ответ ${formatUsd(message.metrics.outputCostUsd)})`
+          : 'нет данных — сообщение создано до включения расчёта'}</span>
         {message.metrics.finishReason === 'length' && <span className="truncation-note">Ответ достиг лимита токенов. Попросите агента продолжить.</span>}
       </footer>}
     </article>)}

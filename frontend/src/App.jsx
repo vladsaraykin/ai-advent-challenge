@@ -4,6 +4,7 @@ import { newMessageId } from './messageId'
 import MessageList from './components/MessageList'
 import ChatSidebar from './components/ChatSidebar'
 import MessageComposer from './components/MessageComposer'
+import ChatUsageSummary from './components/ChatUsageSummary'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
 const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
@@ -106,6 +107,7 @@ export default function App({ api = agentApi }) {
       <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>
         <p>{agent?.description || 'Выберите помощника для своей задачи'}</p></div>
         {agent && <span className="model-name">{agent.model}</span>}</header>
+      {!loading && <ChatUsageSummary messages={chat?.messages || []} />}
       {loading ? <div className="loading-state" role="status">Загружаем чаты…</div>
         : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} draft={draft} />}
       {error && <div className="error-banner" role="alert"><span>{error}</span>
