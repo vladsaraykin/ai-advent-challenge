@@ -34,7 +34,8 @@ public class AgentRegistry implements AgentCatalog {
                     Integer.parseInt(properties.getProperty("max-history-chars", "60000")),
                     new TokenPricing(requiredDecimal(properties, "pricing.input-per-million-usd"),
                             requiredDecimal(properties, "pricing.cached-input-per-million-usd"),
-                            requiredDecimal(properties, "pricing.output-per-million-usd")));
+                            requiredDecimal(properties, "pricing.output-per-million-usd")),
+                    compression(properties));
             if (loaded.putIfAbsent(definition.id(), new ConfiguredAgent(definition, model)) != null) {
                 throw new IllegalArgumentException("Duplicate agent id: " + definition.id());
             }
@@ -56,5 +57,14 @@ public class AgentRegistry implements AgentCatalog {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing agent setting: " + key);
         try { return new BigDecimal(value); }
         catch (NumberFormatException exception) { throw new IllegalArgumentException("Invalid agent setting: " + key); }
+    }
+
+    private static AgentDefinition.ContextCompression compression(Properties properties) {
+        boolean enabled = Boolean.parseBoolean(properties.getProperty("context-compression.enabled", "false"));
+        return new AgentDefinition.ContextCompression(enabled,
+                Integer.parseInt(properties.getProperty("context-compression.recent-messages", "10")),
+                Integer.parseInt(properties.getProperty("context-compression.summary-batch-size", "10")),
+                Integer.parseInt(properties.getProperty("context-compression.summary-max-completion-tokens", "1000")),
+                properties.getProperty("context-compression.system-prompt", enabled ? null : "disabled"));
     }
 }

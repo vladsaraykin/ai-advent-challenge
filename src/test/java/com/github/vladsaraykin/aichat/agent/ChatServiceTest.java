@@ -5,11 +5,14 @@ import com.github.vladsaraykin.aichat.agent.domain.*;
 import com.github.vladsaraykin.aichat.agent.infrastructure.*;
 import java.nio.file.*;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import static org.assertj.core.api.Assertions.*;
 
 class ChatServiceTest {
@@ -153,5 +156,185 @@ class ChatServiceTest {
         Chat loaded = new FileChatRepository(directory.toString()).get("architect", chatId);
         assertThat(loaded.messages().getFirst().metrics().totalTokens()).isEqualTo(15);
         assertThat(loaded.messages().getFirst().metrics().totalCostUsd()).isNull();
+    }
+
+    @Test void streamsDeltasAndPersistsOnlyTheCompletedTurn() throws Exception {
+        ConversationModel model = new ConversationModel() {
+            @Override public Reply reply(AgentDefinition definition, List<ChatMessage> messages) {
+                return ChatServiceTest.reply();
+            }
+            @Override public Flux<StreamPart> stream(AgentDefinition definition, List<ChatMessage> messages) {
+                return Flux.just(StreamPart.delta("Часть "), StreamPart.delta("ответа"),
+                        StreamPart.completed(new Reply("Часть ответа", ChatServiceTest.reply().metrics())));
+            }
+        };
+        var service = service(model);
+        Chat chat = service.create("architect");
+
+        var events = service.stream("architect", chat.id(), UUID.randomUUID(), "Вопрос")
+                .collectList().block(Duration.ofSeconds(2));
+
+        assertThat(events).extracting(ChatService.StreamEvent::type).containsExactly(
+                ChatService.StreamEvent.Type.STARTED, ChatService.StreamEvent.Type.DELTA,
+                ChatService.StreamEvent.Type.DELTA, ChatService.StreamEvent.Type.COMPLETED);
+        assertThat(events).extracting(ChatService.StreamEvent::text).containsExactly(null, "Часть ", "ответа", null);
+        assertThat(service.get("architect", chat.id()).messages()).extracting(ChatMessage::content)
+                .containsExactly("Вопрос", "Часть ответа");
+    }
+
+    @Test void failedOrCancelledStreamDoesNotPersistPartialTurnAndCanBeRetried() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        ConversationModel model = new ConversationModel() {
+            @Override public Reply reply(AgentDefinition definition, List<ChatMessage> messages) {
+                return ChatServiceTest.reply();
+            }
+            @Override public Flux<StreamPart> stream(AgentDefinition definition, List<ChatMessage> messages) {
+                if (attempts.incrementAndGet() == 1) return Flux.concat(Flux.just(StreamPart.delta("часть")),
+                        Flux.error(new ChatFailure(ChatFailure.Kind.PROVIDER, "Сбой")));
+                return Flux.just(StreamPart.delta("Ответ"),
+                        StreamPart.completed(new Reply("Ответ", ChatServiceTest.reply().metrics())));
+            }
+        };
+        var service = service(model);
+        Chat chat = service.create("architect");
+        UUID messageId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.stream("architect", chat.id(), messageId, "Вопрос")
+                .collectList().block(Duration.ofSeconds(2))).hasMessageContaining("Сбой");
+        assertThat(service.get("architect", chat.id()).messages()).isEmpty();
+        service.stream("architect", chat.id(), messageId, "Вопрос").collectList().block(Duration.ofSeconds(2));
+        assertThat(service.get("architect", chat.id()).messages()).hasSize(2);
+
+        Chat cancelled = service.create("chef");
+        service.stream("chef", cancelled.id(), UUID.randomUUID(), "Отмена").take(1).blockLast();
+        assertThat(service.get("chef", cancelled.id()).messages()).isEmpty();
+    }
+
+    @Test void compressesOldMessagesUpdatesSummaryAndSendsOnlySummaryWithRecentHistory() throws Exception {
+        List<ContextSummary> answerSummaries = new ArrayList<>();
+        List<List<String>> answerContexts = new ArrayList<>();
+        List<ContextSummary> previousSummaries = new ArrayList<>();
+        AtomicInteger summaryCalls = new AtomicInteger();
+        ConversationModel model = new ConversationModel() {
+            @Override public Reply reply(AgentDefinition definition, List<ChatMessage> messages) {
+                return ChatServiceTest.reply();
+            }
+            @Override public Flux<StreamPart> stream(AgentDefinition definition, ContextSummary summary,
+                                                     List<ChatMessage> messages) {
+                answerSummaries.add(summary);
+                answerContexts.add(messages.stream().map(ChatMessage::content).toList());
+                return Flux.just(StreamPart.delta("Ответ"), StreamPart.completed(ChatServiceTest.reply()));
+            }
+            @Override public Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
+                                                   List<ChatMessage> messages) {
+                previousSummaries.add(previous);
+                int call = summaryCalls.incrementAndGet();
+                return Mono.just(new Reply("summary-" + call + ":" + messages.getFirst().content(),
+                        ChatServiceTest.reply().metrics()));
+            }
+        };
+        var service = service(model);
+        Chat chat = service.create("architect");
+        UUID firstMessageId = UUID.randomUUID();
+
+        List<ChatService.StreamEvent> tenthEvents = null;
+        for (int turn = 1; turn <= 15; turn++) {
+            UUID messageId = turn == 1 ? firstMessageId : UUID.randomUUID();
+            var events = service.stream("architect", chat.id(), messageId, "Вопрос " + turn)
+                    .collectList().block(Duration.ofSeconds(2));
+            if (turn == 10) tenthEvents = events;
+        }
+
+        assertThat(tenthEvents).extracting(ChatService.StreamEvent::type).containsExactly(
+                ChatService.StreamEvent.Type.STARTED, ChatService.StreamEvent.Type.DELTA,
+                ChatService.StreamEvent.Type.SUMMARIZING, ChatService.StreamEvent.Type.COMPLETED);
+        Chat compressed = service.get("architect", chat.id());
+        assertThat(compressed.messages()).hasSize(10);
+        assertThat(compressed.messages()).extracting(ChatMessage::content)
+                .containsExactly("Вопрос 11", "Ответ", "Вопрос 12", "Ответ", "Вопрос 13", "Ответ",
+                        "Вопрос 14", "Ответ", "Вопрос 15", "Ответ");
+        assertThat(compressed.summary().content()).startsWith("summary-2:");
+        assertThat(compressed.summary().summarizedMessages()).isEqualTo(20);
+        assertThat(compressed.summary().calls()).isEqualTo(2);
+        assertThat(compressed.summary().totalTokens()).isEqualTo(60);
+        assertThat(compressed.summary().totalCostUsd()).isEqualByComparingTo("0.00007200");
+        assertThat(compressed.summary().archivedUsage().calls()).isEqualTo(10);
+        assertThat(compressed.summary().archivedUsage().totalTokens()).isEqualTo(300);
+        assertThat(compressed.summary().archivedUsage().totalCostUsd()).isEqualByComparingTo("0.00036000");
+        assertThat(previousSummaries).hasSize(2);
+        assertThat(previousSummaries.getFirst()).isNull();
+        assertThat(previousSummaries.getLast().content()).startsWith("summary-1:");
+        assertThat(answerSummaries.get(10).content()).startsWith("summary-1:");
+        assertThat(answerContexts.get(10)).containsExactly("Вопрос 6", "Ответ", "Вопрос 7", "Ответ",
+                "Вопрос 8", "Ответ", "Вопрос 9", "Ответ", "Вопрос 10", "Ответ", "Вопрос 11");
+
+        var duplicate = service.stream("architect", chat.id(), firstMessageId, "Вопрос 1")
+                .collectList().block(Duration.ofSeconds(2));
+        assertThat(duplicate).extracting(ChatService.StreamEvent::type)
+                .containsExactly(ChatService.StreamEvent.Type.COMPLETED);
+        assertThat(summaryCalls).hasValue(2);
+        assertThatThrownBy(() -> service.stream("architect", chat.id(), firstMessageId, "Другой текст"))
+                .isInstanceOf(ChatFailure.class).hasMessageContaining("уже использован");
+
+        var restarted = service(model);
+        assertThat(restarted.get("architect", chat.id()).summary()).isEqualTo(compressed.summary());
+    }
+
+    @Test void compressesContextForTheNonStreamingEndpointToo() throws Exception {
+        AtomicInteger summaryCalls = new AtomicInteger();
+        ConversationModel model = new ConversationModel() {
+            @Override public Reply reply(AgentDefinition definition, List<ChatMessage> messages) {
+                return ChatServiceTest.reply();
+            }
+            @Override public Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
+                                                   List<ChatMessage> messages) {
+                summaryCalls.incrementAndGet();
+                return Mono.just(new Reply("Краткая память", ChatServiceTest.reply().metrics()));
+            }
+        };
+        var service = service(model);
+        Chat chat = service.create("chef");
+        for (int turn = 1; turn <= 10; turn++) {
+            service.send("chef", chat.id(), UUID.randomUUID(), "Вопрос " + turn);
+        }
+
+        Chat compressed = service.get("chef", chat.id());
+        assertThat(compressed.summary().summarizedMessages()).isEqualTo(10);
+        assertThat(compressed.messages()).hasSize(10);
+        assertThat(compressed.messageCount()).isEqualTo(20);
+        assertThat(summaryCalls).hasValue(1);
+    }
+
+    @Test void summaryFailureKeepsEveryMessageAndReturnsAWarning() throws Exception {
+        AtomicInteger summaryCalls = new AtomicInteger();
+        ConversationModel model = new ConversationModel() {
+            @Override public Reply reply(AgentDefinition definition, List<ChatMessage> messages) {
+                return ChatServiceTest.reply();
+            }
+            @Override public Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
+                                                   List<ChatMessage> messages) {
+                summaryCalls.incrementAndGet();
+                return Mono.error(new ChatFailure(ChatFailure.Kind.PROVIDER, "Summary unavailable"));
+            }
+        };
+        var service = service(model);
+        Chat chat = service.create("chef");
+        List<ChatService.StreamEvent> events = null;
+        for (int turn = 1; turn <= 10; turn++) {
+            events = service.stream("chef", chat.id(), UUID.randomUUID(), "Вопрос " + turn)
+                    .collectList().block(Duration.ofSeconds(2));
+        }
+
+        assertThat(events.getLast().type()).isEqualTo(ChatService.StreamEvent.Type.COMPLETED);
+        assertThat(events.getLast().warning()).contains("сжатие истории не выполнено");
+        assertThat(service.get("chef", chat.id()).summary()).isNull();
+        assertThat(service.get("chef", chat.id()).messages()).hasSize(20);
+        assertThat(summaryCalls).hasValue(1);
+
+        var next = service.stream("chef", chat.id(), UUID.randomUUID(), "Вопрос 11")
+                .collectList().block(Duration.ofSeconds(2));
+        assertThat(next.getLast().warning()).contains("полному доступному контексту");
+        assertThat(service.get("chef", chat.id()).messages()).hasSize(22);
+        assertThat(summaryCalls).hasValue(2);
     }
 }

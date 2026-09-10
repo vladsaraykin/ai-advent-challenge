@@ -12,6 +12,7 @@ import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import reactor.core.publisher.Flux;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -84,5 +85,62 @@ class OpenAiConversationModelTest {
         assertThat(metrics.inputCostUsd()).isEqualByComparingTo("0.00028000");
         assertThat(metrics.outputCostUsd()).isEqualByComparingTo("0.00032000");
         assertThat(metrics.totalCostUsd()).isEqualByComparingTo("0.00060000");
+    }
+
+    @Test void streamsTextAndEmitsFinalUsageMetrics() {
+        ChatModel model = mock(ChatModel.class);
+        var first = new org.springframework.ai.chat.model.ChatResponse(List.of(
+                new org.springframework.ai.chat.model.Generation(
+                        new org.springframework.ai.chat.messages.AssistantMessage("Го"))));
+        var finalGeneration = new org.springframework.ai.chat.model.Generation(
+                new org.springframework.ai.chat.messages.AssistantMessage("тово"),
+                org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason("STOP").build());
+        var usage = new DefaultUsage(100, 20, 120, null, 40L, null);
+        var second = new org.springframework.ai.chat.model.ChatResponse(List.of(finalGeneration),
+                ChatResponseMetadata.builder().usage(usage).build());
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.just(first, second));
+
+        var parts = new OpenAiConversationModel(model, CHARACTER_COUNTER).stream(definition, List.of())
+                .collectList().block();
+
+        assertThat(parts).extracting(ConversationModel.StreamPart::delta).containsExactly("Го", "тово", null);
+        var completed = parts.getLast().completed();
+        assertThat(completed.text()).isEqualTo("Готово");
+        assertThat(completed.metrics().promptTokens()).isEqualTo(100);
+        assertThat(completed.metrics().cachedPromptTokens()).isEqualTo(40);
+        assertThat(completed.metrics().completionTokens()).isEqualTo(20);
+        assertThat(completed.metrics().totalCostUsd()).isEqualByComparingTo("0.00006000");
+        assertThat(completed.metrics().finishReason()).isEqualTo("stop");
+        var prompt = org.mockito.ArgumentCaptor.forClass(Prompt.class);
+        verify(model).stream(prompt.capture());
+        assertThat(((OpenAiChatOptions) prompt.getValue().getOptions()).getStreamOptions().includeUsage()).isTrue();
+    }
+
+    @Test void putsSummaryBeforeRecentMessagesAndUsesDedicatedSummaryLimit() {
+        var compression = new AgentDefinition.ContextCompression(true, 10, 10, 512,
+                "Сохрани факты без выдумок");
+        var compressedDefinition = new AgentDefinition("architect", "Architect", "Architecture",
+                "gpt-4.1-mini", "System instruction", 4096, null, 60, 60000, PRICING, compression);
+        var summary = new ContextSummary("Ранее выбрали PostgreSQL", 10, Instant.now(),
+                1, 100, 80, 20, 100, new BigDecimal("0.0001"));
+        var recent = List.of(
+                new ChatMessage(UUID.randomUUID(), ChatMessage.Role.USER, "Новый вопрос", Instant.now(), null));
+
+        Prompt answerPrompt = OpenAiConversationModel.prompt(compressedDefinition, summary, recent, true);
+        assertThat(answerPrompt.getInstructions()).extracting(Message::getText)
+                .containsExactly("System instruction",
+                        "Краткая память предыдущей части диалога:\n<summary>\nРанее выбрали PostgreSQL\n</summary>",
+                        "Новый вопрос");
+        assertThat(((OpenAiChatOptions) answerPrompt.getOptions()).getMaxCompletionTokens()).isEqualTo(4096);
+
+        Prompt summaryPrompt = OpenAiConversationModel.summaryPrompt(compressedDefinition, summary, recent);
+        assertThat(summaryPrompt.getInstructions()).extracting(Message::getText)
+                .containsExactly("Сохрани факты без выдумок",
+                        "Существующее summary:\n<summary>\nРанее выбрали PostgreSQL\n</summary>",
+                        "Новый вопрос",
+                        "Обнови summary по переданным сообщениям. Верни только итоговый текст summary.");
+        var options = (OpenAiChatOptions) summaryPrompt.getOptions();
+        assertThat(options.getMaxCompletionTokens()).isEqualTo(512);
+        assertThat(options.getStreamOptions().includeUsage()).isTrue();
     }
 }

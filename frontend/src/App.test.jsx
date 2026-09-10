@@ -5,7 +5,8 @@ import App from './App'
 import { newMessageId } from './messageId'
 
 const agents = [
-  { id: 'architect', name: 'Архитектор ПО', description: 'Проектирование систем', model: 'gpt-4.1-mini' },
+  { id: 'architect', name: 'Архитектор ПО', description: 'Проектирование систем', model: 'gpt-4.1-mini',
+    contextCompression: true, recentMessages: 10, summaryBatchSize: 10 },
   { id: 'chef', name: 'Повар-помощник', description: 'Рецепты блюд', model: 'gpt-4.1-mini' }
 ]
 const makeChat = (id, agentId = 'architect', title = 'Новый чат', messages = []) => ({
@@ -27,7 +28,11 @@ const makeApi = () => ({
   chats: vi.fn().mockResolvedValue([]),
   chat: vi.fn(),
   create: vi.fn().mockResolvedValue(makeChat('one')),
-  send: vi.fn().mockResolvedValue(answer(makeChat('one')))
+  sendStream: vi.fn().mockImplementation(async (agentId, chatId, message, handlers) => {
+    handlers.delta({ text: '**Ответ ' })
+    handlers.delta({ text: 'агента**' })
+    handlers.completed({ chat: answer(makeChat('one')) })
+  })
 })
 beforeEach(() => localStorage.clear())
 
@@ -45,15 +50,28 @@ describe('agent conversations', () => {
   it('disables sending and switching while waiting and renders answer with metrics', async () => {
     const api = makeApi()
     let resolve
-    api.send.mockImplementation(() => new Promise(done => { resolve = done }))
+    let handlers
+    api.sendStream.mockImplementation((agentId, chatId, message, callbacks) => new Promise(done => {
+      handlers = callbacks
+      resolve = () => {
+        callbacks.completed({ chat: answer(makeChat('one')) })
+        done()
+      }
+    }))
     render(<App api={api} />)
     await screen.findByRole('heading', { name: 'С чего начнём?' })
     await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Мой вопрос')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('готовит ответ')
+    expect(await screen.findByRole('status')).toHaveTextContent('подключается к модели')
     expect(screen.getByRole('combobox')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Ожидаем ответ…' })).toBeDisabled()
-    await waitFor(() => expect(api.send).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(api.sendStream).toHaveBeenCalledTimes(1))
+    handlers.summarizing()
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Сжимаем предыдущую историю'))
+    handlers.delta({ text: '**Ответ ' })
+    handlers.delta({ text: 'поступает**' })
+    expect(await screen.findByText('Ответ поступает')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Ответ поступает')
     resolve(answer(makeChat('one')))
     expect(await screen.findByText('Ответ агента')).toBeInTheDocument()
     expect(within(screen.getByRole('log')).getByText(/90 токенов/)).toBeInTheDocument()
@@ -62,13 +80,13 @@ describe('agent conversations', () => {
     expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('всего 90 токенов')
     expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('$0.000108')
     expect(screen.getByLabelText('Ваше сообщение')).toHaveValue('')
-    expect(api.send.mock.calls[0].slice(0, 2)).toEqual(['architect', 'one'])
-    expect(api.send.mock.calls[0][2].content).toBe('Мой вопрос')
+    expect(api.sendStream.mock.calls[0].slice(0, 2)).toEqual(['architect', 'one'])
+    expect(api.sendStream.mock.calls[0][2].content).toBe('Мой вопрос')
   })
 
   it('retains draft on provider failure and reuses message ID on retry', async () => {
     const api = makeApi()
-    api.send.mockRejectedValueOnce(new Error('OpenAI недоступен'))
+    api.sendStream.mockRejectedValueOnce(new Error('OpenAI недоступен'))
     render(<App api={api} />)
     await screen.findByRole('heading', { name: 'С чего начнём?' })
     await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Мой вопрос')
@@ -77,7 +95,7 @@ describe('agent conversations', () => {
     expect(screen.getByLabelText('Ваше сообщение')).toHaveValue('Мой вопрос')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
     await screen.findByText('Ответ агента')
-    expect(api.send.mock.calls[0][2].messageId).toBe(api.send.mock.calls[1][2].messageId)
+    expect(api.sendStream.mock.calls[0][2].messageId).toBe(api.sendStream.mock.calls[1][2].messageId)
     expect(api.create).toHaveBeenCalledTimes(1)
   })
 
@@ -130,5 +148,25 @@ describe('agent conversations', () => {
     expect(screen.getByText(/Стоимость: нет данных/)).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Суммарный расход чата' }))
       .toHaveTextContent('Стоимость старых вызовов недоступна')
+  })
+
+  it('shows separately stored summary and includes its usage safely', async () => {
+    const api = makeApi()
+    const chat = makeChat('compressed', 'architect', 'Длинный чат', [])
+    chat.summary = { content: '<script>alert(1)</script>\n\n**Выбран PostgreSQL**', summarizedMessages: 20,
+      calls: 2, promptTokens: 300, completionTokens: 80, totalTokens: 380, totalCostUsd: 0.0004,
+      archivedUsage: { calls: 10, pricedCalls: 10, promptTokens: 1000, completionTokens: 200,
+        totalTokens: 1200, totalCostUsd: 0.0012 } }
+    api.chats.mockResolvedValue([chat])
+    api.chat.mockResolvedValue(chat)
+    const { container } = render(<App api={api} />)
+
+    expect(await screen.findByText(/Сжато 20 сообщений/)).toBeInTheDocument()
+    await userEvent.click(screen.getByText(/Сжато 20 сообщений/))
+    expect(await screen.findByText('Выбран PostgreSQL')).toBeInTheDocument()
+    expect(container.querySelector('script')).toBeNull()
+    expect(screen.getByText(/архивировано 1 200 токенов/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('1 580 токенов')
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('$0.001600')
   })
 })

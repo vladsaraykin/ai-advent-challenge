@@ -51,4 +51,27 @@ class AgentRegistryTest {
         assertThatThrownBy(() -> new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml"))
                 .hasMessageContaining("Cached input price");
     }
+
+    @Test void validatesAndLoadsContextCompressionSettings() throws Exception {
+        String compression = """
+                context-compression:
+                  enabled: true
+                  recent-messages: 8
+                  summary-batch-size: 6
+                  summary-max-completion-tokens: 512
+                  system-prompt: Сохрани важные факты.
+                """;
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG.replace("pricing:\n", compression + "pricing:\n"));
+        var registry = new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml");
+        var settings = registry.get("custom").definition().compression();
+        assertThat(settings.enabled()).isTrue();
+        assertThat(settings.recentMessages()).isEqualTo(8);
+        assertThat(settings.batchSize()).isEqualTo(6);
+        assertThat(settings.maxCompletionTokens()).isEqualTo(512);
+
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG.replace("pricing:\n",
+                compression.replace("recent-messages: 8", "recent-messages: 7") + "pricing:\n"));
+        assertThatThrownBy(() -> new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml"))
+                .hasMessageContaining("compression");
+    }
 }

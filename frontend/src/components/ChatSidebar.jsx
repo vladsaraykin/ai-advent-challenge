@@ -1,6 +1,6 @@
 export default function ChatSidebar({ agents, agentId, chats, chatId, disabled, onAgent, onChat, onCreate }) {
   return <aside className="sidebar">
-      <a className="brand" href="/">Мои агенты<span>AI Advent · День 8</span></a>
+      <a className="brand" href="/">Мои агенты<span>AI Advent · День 9</span></a>
     <label className="agent-select">Ваш помощник
       <select value={agentId} onChange={event => onAgent(event.target.value)} disabled={disabled}>
         {!agents.length && <option value="">Загрузка агентов…</option>}

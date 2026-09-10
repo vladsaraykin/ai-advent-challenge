@@ -4,8 +4,8 @@ export const formatUsd = value => new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', minimumFractionDigits: 6, maximumFractionDigits: 8
 }).format(Number(value || 0))
 
-export function summarizeUsage(messages) {
-  return messages.reduce((summary, message) => {
+export function summarizeUsage(messages, contextSummary) {
+  const result = messages.reduce((summary, message) => {
     if (!message.metrics) return summary
     summary.calls += 1
     summary.promptTokens += Number(message.metrics.promptTokens || 0)
@@ -17,4 +17,22 @@ export function summarizeUsage(messages) {
     }
     return summary
   }, { calls: 0, pricedCalls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, totalCostUsd: 0 })
+  if (contextSummary) {
+    const archived = contextSummary.archivedUsage || {}
+    result.calls += Number(archived.calls || 0)
+    result.pricedCalls += Number(archived.pricedCalls || 0)
+    result.promptTokens += Number(archived.promptTokens || 0)
+    result.completionTokens += Number(archived.completionTokens || 0)
+    result.totalTokens += Number(archived.totalTokens || 0)
+    result.totalCostUsd += Number(archived.totalCostUsd || 0)
+    result.calls += Number(contextSummary.calls || 0)
+    result.pricedCalls += contextSummary.pricedCalls == null
+      ? (contextSummary.totalCostUsd == null ? 0 : Number(contextSummary.calls || 0))
+      : Number(contextSummary.pricedCalls)
+    result.promptTokens += Number(contextSummary.promptTokens || 0)
+    result.completionTokens += Number(contextSummary.completionTokens || 0)
+    result.totalTokens += Number(contextSummary.totalTokens || 0)
+    result.totalCostUsd += Number(contextSummary.totalCostUsd || 0)
+  }
+  return result
 }

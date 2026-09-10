@@ -3,9 +3,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { formatTokens, formatUsd } from '../usage'
 
-export default function MessageList({ messages, agent, pending, draft }) {
+export default function MessageList({ messages, agent, pending, draft, streamedAnswer = '', streamPhase = '' }) {
   const bottom = useRef(null)
-  useEffect(() => { bottom.current?.scrollIntoView?.({ block: 'nearest' }) }, [messages, pending])
+  useEffect(() => { bottom.current?.scrollIntoView?.({ block: 'nearest' }) }, [messages, pending, streamedAnswer])
   return <div className="message-list" role="log" aria-label="Сообщения чата" aria-live="polite">
     {!messages.length && !pending && <div className="welcome">
       <div className="welcome-mark" aria-hidden="true">{agent?.name?.slice(0, 1) || 'А'}</div>
@@ -33,7 +33,15 @@ export default function MessageList({ messages, agent, pending, draft }) {
       </footer>}
     </article>)}
     {pending && <><article className="message message-user"><div className="message-author">Вы</div><p className="pending-text">{draft}</p></article>
-      <div className="waiting" role="status"><i />{agent?.name} готовит ответ…</div></>}
+      {streamedAnswer
+        ? <article className="message message-assistant message-streaming">
+          <div className="message-author">{agent?.name}</div>
+          <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{streamedAnswer}</ReactMarkdown></div>
+          <div className="stream-status" role="status"><i />
+            {streamPhase === 'summarizing' ? 'Сжимаем историю…' : 'Ответ поступает…'}</div>
+        </article>
+        : <div className="waiting" role="status"><i />{streamPhase === 'summarizing'
+          ? 'Сжимаем предыдущую историю…' : `${agent?.name} подключается к модели…`}</div>}</>}
     <div ref={bottom} />
   </div>
 }

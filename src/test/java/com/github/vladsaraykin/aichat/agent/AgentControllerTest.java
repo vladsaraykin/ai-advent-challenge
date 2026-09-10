@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.http.MediaType;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class AgentControllerTest {
     @TempDir Path directory;
@@ -22,13 +23,18 @@ class AgentControllerTest {
                         new BigDecimal("0.00000200"), new BigDecimal("0.00000800"),
                         new BigDecimal("0.00001000"), "stop")), "classpath:agents/*.yaml");
         var service = new ChatService(registry, new FileChatRepository(directory.toString()));
-        var mvc = MockMvcBuilders.standaloneSetup(new AgentController(service))
+        var controller = new AgentController(service);
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new ChatExceptionHandler()).build();
         mvc.perform(get("/api/agents")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$[0].id").value("architect"))
                 .andExpect(jsonPath("$[2].id").value("techno"))
+                .andExpect(jsonPath("$[0].contextCompression").value(true))
+                .andExpect(jsonPath("$[0].recentMessages").value(10))
+                .andExpect(jsonPath("$[0].summaryBatchSize").value(10))
                 .andExpect(jsonPath("$[0].systemPrompt").doesNotExist())
+                .andExpect(jsonPath("$[0].summaryPrompt").doesNotExist())
                 .andExpect(jsonPath("$[0].pricing").doesNotExist());
         mvc.perform(post("/api/agents/chef/chats")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.messages").isEmpty());
@@ -41,6 +47,13 @@ class AgentControllerTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.messages.length()").value(2))
                 .andExpect(jsonPath("$.messages[1].content").value("ok"))
                 .andExpect(jsonPath("$.messages[1].metrics.totalCostUsd").value(0.00001000));
+        var stream = controller.stream("architect", chat.id(),
+                new AgentController.SendRequest(UUID.randomUUID(), "Поток"));
+        assertThat(stream.getHeaders().getFirst("X-Accel-Buffering")).isEqualTo("no");
+        var events = stream.getBody().collectList().block();
+        assertThat(events).extracting(event -> event.event()).containsExactly("started", "completed");
+        assertThat(((ChatService.StreamEvent) events.getLast().data()).chat().messages().getLast().content())
+                .isEqualTo("ok");
         mvc.perform(get("/api/agents/chef/chats/" + chat.id())).andExpect(status().isNotFound());
         mvc.perform(get("/api/agents/architect/chats/not-a-uuid")).andExpect(status().isBadRequest());
     }
