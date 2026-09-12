@@ -43,8 +43,14 @@ describe('agent conversations', () => {
     await screen.findByRole('heading', { name: 'С чего начнём?' })
     expect(screen.getByRole('button', { name: 'Отправить' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: '+ Новый чат' }))
-    await waitFor(() => expect(api.create).toHaveBeenCalledWith('architect'))
-    expect(await screen.findByRole('button', { name: /Новый чат.*0 сообщ/ })).toBeInTheDocument()
+    expect(api.create).not.toHaveBeenCalled()
+    await userEvent.selectOptions(screen.getByLabelText('Стратегия нового чата'), 'SLIDING_WINDOW')
+    api.create.mockResolvedValue({ ...makeChat('one'), strategy: 'SLIDING_WINDOW' })
+    await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Мой вопрос')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith('architect', 'SLIDING_WINDOW'))
+    await screen.findByText('Ответ агента')
+    expect(screen.queryByLabelText('Стратегия нового чата')).not.toBeInTheDocument()
   })
 
   it('disables sending and switching while waiting and renders answer with metrics', async () => {
@@ -108,7 +114,7 @@ describe('agent conversations', () => {
     api.chat.mockImplementation((id, chatId) => Promise.resolve([first, second, chef].find(chat => chat.id === chatId)))
     render(<App api={api} />)
     await screen.findByText('Мой магазин')
-    await userEvent.click(screen.getByRole('button', { name: /Второй проект/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^Второй проект/ }))
     await screen.findByText('Мой блог')
     expect(screen.queryByText('Мой магазин')).not.toBeInTheDocument()
     await userEvent.selectOptions(screen.getByRole('combobox'), 'chef')
@@ -128,6 +134,130 @@ describe('agent conversations', () => {
     await screen.findByText('Безопасный Markdown')
     expect(container.querySelector('script')).toBeNull()
     expect(api.chat).toHaveBeenCalledWith('architect', 'saved')
+  })
+
+  it('shows facts extraction progress and separately accounted key-value memory', async () => {
+    const api = makeApi()
+    const chat = { ...makeChat('one'), strategy: 'FACTS' }
+    api.create.mockResolvedValue(chat)
+    let finish
+    api.sendStream.mockImplementation((agentId, chatId, message, handlers) => new Promise(resolve => {
+      handlers.updating_facts()
+      finish = () => {
+        handlers.completed({ chat: { ...answer(chat), memory: {
+          facts: { goal: '<script>test</script>' },
+          extractionUsage: { calls: 1, pricedCalls: 1, promptTokens: 10, completionTokens: 5, totalTokens: 15, totalCostUsd: 0.00002 }
+        } } })
+        resolve()
+      }
+    }))
+    const { container } = render(<App api={api} />)
+    await screen.findByLabelText('Стратегия нового чата')
+    await userEvent.selectOptions(screen.getByLabelText('Стратегия нового чата'), 'FACTS')
+    await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Цель: магазин')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Обновляем факты')
+    finish()
+    await screen.findByText('<script>test</script>')
+    expect(container.querySelector('script')).toBeNull()
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('105 токенов')
+    expect(screen.getByText(/Обновление facts: 1/)).toBeInTheDocument()
+  })
+
+  it('creates a checkpoint and switches independent branches', async () => {
+    const api = makeApi()
+    const root = { ...answer(makeChat('root')), strategy: 'BRANCHING', branches: [] }
+    const a = { ...makeChat('a', 'architect', 'Вариант A', [{ id: 'a1', role: 'ASSISTANT', content: 'Только A' }]),
+      strategy: 'BRANCHING', parentChatId: 'root', branches: [] }
+    const b = { ...makeChat('b', 'architect', 'Вариант B', [{ id: 'b1', role: 'ASSISTANT', content: 'Только B' }]),
+      strategy: 'BRANCHING', parentChatId: 'root', branches: [] }
+    api.chats.mockResolvedValueOnce([root]).mockResolvedValue([root, a, b])
+    api.chat.mockImplementation((agent, id) => Promise.resolve({ root, a, b }[id]))
+    api.fork = vi.fn().mockResolvedValue({ ...root, branches: [a, b], checkpointId: 'point' })
+    render(<App api={api} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Создать развилку: A / B' }))
+    await waitFor(() => expect(api.fork).toHaveBeenCalledWith('architect', 'root', {
+      firstBranchName: 'Вариант A', secondBranchName: 'Вариант B'
+    }))
+    expect(screen.getByLabelText('Ваше сообщение')).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Вариант A', exact: true }))
+    await screen.findByText('Только A')
+    await userEvent.click(screen.getByRole('button', { name: 'Вариант B', exact: true }))
+    await screen.findByText('Только B')
+    expect(screen.queryByText('Только A')).not.toBeInTheDocument()
+  })
+
+  it('renders the full sliding-window transcript and counts each response once', async () => {
+    const api = makeApi()
+    const messages = Array.from({ length: 14 }, (_, i) => ({
+      id: 'window-' + i, role: i % 2 ? 'ASSISTANT' : 'USER', content: 'Сообщение окна ' + i,
+      metrics: i % 2 ? answer(makeChat('metrics')).messages[1].metrics : null
+    }))
+    const chat = { ...makeChat('window', 'architect', 'Окно', messages), strategy: 'SLIDING_WINDOW' }
+    api.chats.mockResolvedValue([chat])
+    api.chat.mockResolvedValue(chat)
+    render(<App api={api} />)
+    await screen.findByText('Сообщение окна 0')
+    expect(screen.getByText('Сообщение окна 13')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Стратегия контекста' })).toHaveTextContent('Вне контекста: 4')
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('630 токенов')
+  })
+
+  it('renders the full facts transcript while showing the provider window and memory usage', async () => {
+    const api = makeApi()
+    const messages = Array.from({ length: 14 }, (_, i) => ({
+      id: 'facts-window-' + i, role: i % 2 ? 'ASSISTANT' : 'USER', content: 'Сообщение facts ' + i,
+      metrics: i % 2 ? answer(makeChat('metrics')).messages[1].metrics : null
+    }))
+    const chat = { ...makeChat('facts-window', 'architect', 'Facts', messages), strategy: 'FACTS',
+      memory: { facts: { goal: 'Сохранить всю историю' }, discardedMessages: 0,
+        extractionUsage: { calls: 14, pricedCalls: 14, promptTokens: 140,
+          completionTokens: 70, totalTokens: 210, totalCostUsd: 0.00028 } } }
+    api.chats.mockResolvedValue([chat])
+    api.chat.mockResolvedValue(chat)
+    render(<App api={api} />)
+
+    await screen.findByText('Сообщение facts 0')
+    expect(screen.getByText('Сообщение facts 13')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Стратегия контекста' }))
+      .toHaveTextContent('Вне контекста: 4')
+    expect(screen.getByText('Сохранить всю историю')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' }))
+      .toHaveTextContent('840 токенов')
+  })
+
+  it('confirms deletion, supports cancellation and clears the deleted active chat', async () => {
+    const api = makeApi()
+    const saved = answer(makeChat('saved', 'architect', 'Удаляемый'))
+    api.chats.mockResolvedValue([saved])
+    api.chat.mockResolvedValue(saved)
+    api.delete = vi.fn().mockResolvedValue({})
+    render(<App api={api} />)
+    await screen.findByText('Ответ агента')
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить чат «Мой вопрос»' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('дочерние ветки')
+    await userEvent.click(screen.getByRole('button', { name: 'Отмена', exact: true }))
+    expect(api.delete).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить чат «Мой вопрос»' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить', exact: true }))
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('architect', 'saved'))
+    expect(await screen.findByRole('heading', { name: 'С чего начнём?' })).toBeInTheDocument()
+    expect(screen.queryByText('Ответ агента')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps history and shows an error when deletion fails', async () => {
+    const api = makeApi()
+    const saved = answer(makeChat('saved'))
+    api.chats.mockResolvedValue([saved])
+    api.chat.mockResolvedValue(saved)
+    api.delete = vi.fn().mockRejectedValue(new Error('Дождитесь завершения запроса'))
+    render(<App api={api} />)
+    await screen.findByText('Ответ агента')
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить чат «Мой вопрос»' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить', exact: true }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Дождитесь завершения запроса')
+    expect(screen.getByText('Ответ агента')).toBeInTheDocument()
   })
 
   it('generates valid message IDs on an HTTP origin without randomUUID', () => {

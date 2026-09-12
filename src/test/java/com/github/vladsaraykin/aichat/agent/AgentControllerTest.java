@@ -38,6 +38,13 @@ class AgentControllerTest {
                 .andExpect(jsonPath("$[0].pricing").doesNotExist());
         mvc.perform(post("/api/agents/chef/chats")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.messages").isEmpty());
+        mvc.perform(post("/api/agents/chef/chats").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"strategy\":\"SLIDING_WINDOW\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.strategy").value("SLIDING_WINDOW"));
+        mvc.perform(post("/api/agents/chef/chats").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"strategy\":\"UNKNOWN\"}")).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/agents/chef/chats").contentType(MediaType.APPLICATION_JSON)
+                .content("{}")).andExpect(status().isBadRequest());
         Chat chat = service.create("architect");
         String path = "/api/agents/architect/chats/" + chat.id() + "/messages";
         mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("{\"content\":\" \"}"))
@@ -56,5 +63,8 @@ class AgentControllerTest {
                 .isEqualTo("ok");
         mvc.perform(get("/api/agents/chef/chats/" + chat.id())).andExpect(status().isNotFound());
         mvc.perform(get("/api/agents/architect/chats/not-a-uuid")).andExpect(status().isBadRequest());
+        mvc.perform(delete("/api/agents/chef/chats/" + chat.id())).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/agents/architect/chats/" + chat.id())).andExpect(status().isNoContent());
+        mvc.perform(get("/api/agents/architect/chats/" + chat.id())).andExpect(status().isNotFound());
     }
 }

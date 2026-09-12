@@ -2,11 +2,9 @@ package com.github.vladsaraykin.aichat.agent.application;
 
 import com.github.vladsaraykin.aichat.agent.domain.*;
 import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.Semaphore;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import org.slf4j.*;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -19,213 +17,135 @@ public class ChatService {
     private final ChatRepository repository;
     private final Semaphore calls = new Semaphore(4);
     private final Set<UUID> busyChats = ConcurrentHashMap.newKeySet();
-
     public ChatService(AgentCatalog registry, ChatRepository repository) {
         this.registry = registry;
         this.repository = repository;
     }
     public List<AgentDefinition> agents() { return registry.definitions(); }
-    public List<Chat> list(String agentId) {
+    public List<Chat> list(String agentId) { registry.get(agentId); return repository.list(agentId); }
+    public Chat get(String agentId, UUID chatId) { registry.get(agentId); return repository.get(agentId, chatId); }
+    public void delete(String agentId, UUID chatId) {
         registry.get(agentId);
-        return repository.list(agentId);
+        List<UUID> ids;
+        synchronized (busyChats) {
+            ids = subtree(repository.get(agentId, chatId)).map(Chat::id).toList();
+            if (ids.stream().anyMatch(busyChats::contains)) {
+                throw new ChatFailure(ChatFailure.Kind.BUSY,
+                        "Дождитесь завершения запроса в чате или его ветках перед удалением.");
+            }
+            busyChats.addAll(ids);
+        }
+        try {
+            repository.delete(agentId, chatId);
+            log.info("chat_deleted agentId={} chatId={} deletedChats={}", agentId, chatId, ids.size());
+        } finally {
+            synchronized (busyChats) { busyChats.removeAll(ids); }
+        }
     }
-    public Chat create(String agentId) {
+    private java.util.stream.Stream<Chat> subtree(Chat chat) {
+        return java.util.stream.Stream.concat(java.util.stream.Stream.of(chat), chat.branches().stream().flatMap(this::subtree));
+    }
+    public Chat create(String agentId) { return create(agentId, registry.get(agentId).definition().contextManagement().defaultStrategy()); }
+    public Chat create(String agentId, ContextStrategyType strategy) {
         registry.get(agentId);
-        Chat chat = Chat.create(agentId);
+        Chat chat = Chat.create(agentId, strategy);
         repository.save(chat);
-        log.info("chat_created agentId={} chatId={}", agentId, chat.id());
+        log.info("chat_created agentId={} chatId={} strategy={}", agentId, chat.id(), strategy);
         return chat;
     }
-    public Chat get(String agentId, UUID chatId) {
+    public Chat fork(String agentId, UUID chatId, String first, String second) {
         registry.get(agentId);
-        return repository.get(agentId, chatId);
-    }
-    public Chat send(String agentId, UUID chatId, UUID messageId, String content) {
-        Agent agent = registry.get(agentId);
-        if (!busyChats.add(chatId)) throw new ChatFailure(ChatFailure.Kind.BUSY, "В этом чате уже ожидается ответ. Повторите позже.");
-        boolean acquired = false;
+        lock(chatId);
         try {
             Chat chat = repository.get(agentId, chatId);
-            if (duplicate(chat, messageId, content)) return chat;
-            if (!(acquired = calls.tryAcquire())) {
-                throw new ChatFailure(ChatFailure.Kind.BUSY, "Агенты заняты. Повторите отправку через несколько секунд.");
+            if (chat.strategy() != ContextStrategyType.BRANCHING || chat.messages().isEmpty()) {
+                throw new ChatFailure(ChatFailure.Kind.INVALID, "Развилка доступна после первого ответа в Branching-чате.");
             }
-            MDC.put("requestId", messageId.toString());
-            MDC.put("chatId", chatId.toString());
-            log.info("agent_request agentId={} chatId={} requestId={} historyMessages={} promptLength={}",
-                    agentId, chatId, messageId, chat.messages().size(), content.length());
-            var user = new ChatMessage(messageId, ChatMessage.Role.USER, content, Instant.now(), null);
-            boolean compressionFailed = false;
-            Chat prepared = chat;
-            if (shouldCompress(agent, chat)) {
-                try {
-                    prepared = compress(agent, chat).block();
-                } catch (ChatFailure failure) {
-                    compressionFailed = true;
-                    log.warn("context_summary_failed phase=before_answer agentId={} chatId={} requestId={} kind={}",
-                            agentId, chatId, messageId, failure.kind());
-                }
-            }
-            ChatMessage answer = agent.answer(prepared.summary(), prepared.messages(), user);
-            Chat appended = prepared.append(user, answer);
-            Chat updated = appended;
-            if (!compressionFailed && shouldCompress(agent, appended)) {
-                try {
-                    updated = compress(agent, appended).block();
-                } catch (ChatFailure failure) {
-                    log.warn("context_summary_failed phase=after_answer agentId={} chatId={} requestId={} kind={}",
-                            agentId, chatId, messageId, failure.kind());
-                }
-            }
-            repository.save(updated);
-            log.info("agent_response agentId={} chatId={} requestId={} totalTokens={} costUsd={} "
-                            + "summaryMessages={} summaryCalls={}",
-                    agentId, chatId, messageId, answer.metrics().totalTokens(), answer.metrics().totalCostUsd(),
-                    updated.summary() == null ? 0 : updated.summary().summarizedMessages(),
-                    updated.summary() == null ? 0 : updated.summary().calls());
-            return updated;
-        } catch (ChatFailure exception) {
-            log.warn("agent_request_failed agentId={} chatId={} requestId={} kind={}",
-                    agentId, chatId, messageId, exception.kind(), exception);
-            throw exception;
-        } finally {
-            MDC.remove("requestId");
-            MDC.remove("chatId");
-            if (acquired) calls.release();
-            busyChats.remove(chatId);
-        }
+            if (chat.readOnly()) return chat;
+            Chat forked = chat.fork(first, second);
+            repository.save(forked);
+            log.info("chat_branched agentId={} chatId={} checkpointId={}", agentId, chatId, forked.checkpointId());
+            return forked;
+        } finally { busyChats.remove(chatId); }
     }
-
+    public Chat send(String agentId, UUID chatId, UUID messageId, String content) {
+        return stream(agentId, chatId, messageId, content).filter(e -> e.type() == StreamEvent.Type.COMPLETED)
+                .single().block().chat();
+    }
     public Flux<StreamEvent> stream(String agentId, UUID chatId, UUID messageId, String content) {
         Agent agent = registry.get(agentId);
-        if (!busyChats.add(chatId)) {
-            throw new ChatFailure(ChatFailure.Kind.BUSY, "В этом чате уже ожидается ответ. Повторите позже.");
-        }
-        boolean acquired = calls.tryAcquire();
-        if (!acquired) {
+        lock(chatId);
+        if (!calls.tryAcquire()) {
             busyChats.remove(chatId);
             throw new ChatFailure(ChatFailure.Kind.BUSY, "Агенты заняты. Повторите отправку через несколько секунд.");
         }
         try {
             Chat chat = repository.get(agentId, chatId);
             if (duplicate(chat, messageId, content)) {
-                releaseStream(chatId);
-                return Flux.just(StreamEvent.completed(chat));
+                release(chatId);
+                return Flux.just(StreamEvent.completed(chat, null));
             }
-            log.info("agent_stream_request agentId={} chatId={} requestId={} historyMessages={} promptLength={}",
-                    agentId, chatId, messageId, chat.messages().size(), content.length());
+            if (chat.readOnly()) {
+                throw new ChatFailure(ChatFailure.Kind.INVALID, "Этот диалог сохранён как checkpoint. Выберите ветку для продолжения.");
+            }
+            ContextStrategy strategy = ContextStrategy.forType(chat.strategy());
             var user = new ChatMessage(messageId, ChatMessage.Role.USER, content, Instant.now(), null);
-            Flux<StreamEvent> response = prepare(agent, chat, agentId, chatId, messageId)
-                    .flatMapMany(prepared -> answer(agent, prepared, user, agentId, chatId, messageId));
-            Flux<StreamEvent> execution = shouldCompress(agent, chat)
-                    ? Flux.concat(Flux.just(StreamEvent.summarizing()), response) : response;
-            return Flux.concat(Flux.just(StreamEvent.started(messageId)), execution)
-                    .doOnError(exception -> log.warn(
-                            "agent_stream_failed agentId={} chatId={} requestId={} errorType={}",
-                            agentId, chatId, messageId, exception.getClass().getSimpleName(), exception))
-                    .doFinally(signal -> releaseStream(chatId));
-        } catch (RuntimeException exception) {
-            releaseStream(chatId);
-            throw exception;
+            log.info("agent_stream_request agentId={} chatId={} requestId={} strategy={} historyMessages={} promptLength={}",
+                    agentId, chatId, messageId, chat.strategy(), chat.messages().size(), content.length());
+            Mono<Prepared> preparation = Mono.defer(() -> strategy.before(agent, chat, user))
+                    .map(value -> new Prepared(value, null, false))
+                    .onErrorResume(ChatFailure.class, failure -> summaryFallback(chat, failure));
+            Flux<StreamEvent> execution = preparation.flatMapMany(prepared ->
+                    agent.answerStream(strategy.context(agent, prepared.chat()), user).concatMap(part -> {
+                        if (part.completed() == null) return Mono.just(StreamEvent.delta(part.delta()));
+                        Chat appended = prepared.chat().append(user, part.completed());
+                        Mono<Prepared> finalized = prepared.memoryFailed() ? Mono.just(new Prepared(appended, prepared.warning(), true))
+                                : Mono.defer(() -> strategy.after(agent, appended))
+                                    .map(value -> new Prepared(value, prepared.warning(), false))
+                                    .onErrorResume(ChatFailure.class, failure -> summaryFallback(appended, failure));
+                        Mono<StreamEvent> completed = finalized.map(result -> {
+                            repository.save(result.chat());
+                            log.info("agent_stream_response agentId={} chatId={} requestId={} strategy={} totalTokens={} costUsd={}",
+                                    agentId, chatId, messageId, chat.strategy(), part.completed().metrics().totalTokens(),
+                                    part.completed().metrics().totalCostUsd());
+                            return StreamEvent.completed(result.chat(), result.warning());
+                        });
+                        return phase(prepared.memoryFailed() ? null : strategy.afterPhase(agent, appended), completed.flux());
+                    }));
+            return Flux.concat(Flux.just(StreamEvent.started(messageId)),
+                            phase(strategy.beforePhase(agent, chat), execution))
+                    .doOnError(error -> log.warn("agent_stream_failed agentId={} chatId={} requestId={} errorType={}",
+                            agentId, chatId, messageId, error.getClass().getSimpleName()))
+                    .doFinally(signal -> release(chatId));
+        } catch (RuntimeException error) { release(chatId); throw error; }
+    }
+    private Mono<Prepared> summaryFallback(Chat chat, ChatFailure failure) {
+        if (chat.strategy() != ContextStrategyType.SUMMARY) return Mono.error(failure);
+        log.warn("context_summary_failed agentId={} chatId={} kind={}", chat.agentId(), chat.id(), failure.kind());
+        return Mono.just(new Prepared(chat, "Доступные сообщения сохранены; сжатие истории не выполнено.", true));
+    }
+    private Flux<StreamEvent> phase(String phase, Flux<StreamEvent> next) {
+        return phase == null ? next : Flux.concat(Flux.just(new StreamEvent(StreamEvent.Type.valueOf(phase),
+                null, null, null, null)), next);
+    }
+    private void lock(UUID id) {
+        synchronized (busyChats) {
+            if (!busyChats.add(id)) throw new ChatFailure(ChatFailure.Kind.BUSY, "В этом чате уже ожидается ответ. Повторите позже.");
         }
     }
-
-    private Mono<PreparedChat> prepare(Agent agent, Chat chat, String agentId, UUID chatId, UUID messageId) {
-        if (!shouldCompress(agent, chat)) return Mono.just(new PreparedChat(chat, null, false));
-        return compress(agent, chat)
-                .map(compacted -> new PreparedChat(compacted, null, false))
-                .onErrorResume(ChatFailure.class, failure -> {
-                    log.warn("context_summary_failed phase=before_answer agentId={} chatId={} requestId={} kind={}",
-                            agentId, chatId, messageId, failure.kind());
-                    return Mono.just(new PreparedChat(chat,
-                            "Не удалось сжать старую историю; ответ построен по полному доступному контексту.", true));
-                });
-    }
-
-    private Flux<StreamEvent> answer(Agent agent, PreparedChat prepared, ChatMessage user,
-                                     String agentId, UUID chatId, UUID messageId) {
-        Flux<StreamEvent> response = agent.answerStream(prepared.chat().summary(), prepared.chat().messages(), user)
-                .concatMap(part -> {
-                    if (part.completed() == null) return Mono.just(StreamEvent.delta(part.delta()));
-                    Chat appended = prepared.chat().append(user, part.completed());
-                    boolean needsCompression = !prepared.compressionFailed() && shouldCompress(agent, appended);
-                    Mono<PreparedChat> finalized = needsCompression
-                            ? compress(agent, appended).map(chat -> new PreparedChat(chat, prepared.warning(), false))
-                                .onErrorResume(ChatFailure.class, failure -> {
-                                    log.warn("context_summary_failed phase=after_answer agentId={} chatId={} "
-                                                    + "requestId={} kind={}",
-                                            agentId, chatId, messageId, failure.kind());
-                                    return Mono.just(new PreparedChat(appended, joinWarnings(prepared.warning(),
-                                            "Ответ сохранён, но сжатие истории не выполнено."), true));
-                                })
-                            : Mono.just(new PreparedChat(appended, prepared.warning(), prepared.compressionFailed()));
-                    Mono<StreamEvent> completed = finalized.map(result -> {
-                        repository.save(result.chat());
-                        log.info("agent_stream_response agentId={} chatId={} requestId={} totalTokens={} costUsd={} "
-                                        + "summaryMessages={} summaryCalls={}",
-                                agentId, chatId, messageId, part.completed().metrics().totalTokens(),
-                                part.completed().metrics().totalCostUsd(),
-                                result.chat().summary() == null ? 0 : result.chat().summary().summarizedMessages(),
-                                result.chat().summary() == null ? 0 : result.chat().summary().calls());
-                        return StreamEvent.completed(result.chat(), result.warning());
-                    });
-                    return needsCompression
-                            ? Flux.concat(Flux.just(StreamEvent.summarizing()), completed) : completed;
-                });
-        return response;
-    }
-
-    private Mono<Chat> compress(Agent agent, Chat chat) {
-        int retained = agent.definition().compression().recentMessages();
-        int removed = chat.messages().size() - retained;
-        List<ChatMessage> batch = List.copyOf(chat.messages().subList(0, removed));
-        log.info("context_summary_started agentId={} chatId={} batchMessages={} previousSummaryMessages={}",
-                chat.agentId(), chat.id(), batch.size(),
-                chat.summary() == null ? 0 : chat.summary().summarizedMessages());
-        return agent.summarize(chat.summary(), batch).map(summary -> {
-            Chat compacted = chat.compact(summary, removed);
-            log.info("context_summary_completed agentId={} chatId={} summarizedMessages={} retainedMessages={} "
-                            + "summaryTokens={} summaryCostUsd={}",
-                    chat.agentId(), chat.id(), summary.summarizedMessages(), compacted.messages().size(),
-                    summary.totalTokens(), summary.totalCostUsd());
-            return compacted;
-        });
-    }
-
-    private boolean shouldCompress(Agent agent, Chat chat) {
-        var compression = agent.definition().compression();
-        return compression.enabled()
-                && chat.messages().size() - compression.recentMessages() >= compression.batchSize();
-    }
-
-    private static String joinWarnings(String first, String second) {
-        return first == null ? second : first + " " + second;
-    }
-
-    private static boolean duplicate(Chat chat, UUID messageId, String content) {
-        return switch (chat.matchUserMessage(messageId, content)) {
+    private void release(UUID id) { calls.release(); busyChats.remove(id); }
+    private static boolean duplicate(Chat chat, UUID id, String content) {
+        return switch (chat.matchUserMessage(id, content)) {
             case NONE -> false;
             case SAME -> true;
-            case CONFLICT -> throw new ChatFailure(ChatFailure.Kind.INVALID,
-                    "Идентификатор сообщения уже использован");
+            case CONFLICT -> throw new ChatFailure(ChatFailure.Kind.INVALID, "Идентификатор сообщения уже использован");
         };
     }
-
-    private void releaseStream(UUID chatId) {
-        calls.release();
-        busyChats.remove(chatId);
-    }
-
-    private record PreparedChat(Chat chat, String warning, boolean compressionFailed) { }
-
+    private record Prepared(Chat chat, String warning, boolean memoryFailed) { }
     public record StreamEvent(Type type, UUID messageId, String text, Chat chat, String warning) {
-        public enum Type { STARTED, SUMMARIZING, DELTA, COMPLETED }
+        public enum Type { STARTED, SUMMARIZING, UPDATING_FACTS, DELTA, COMPLETED }
         static StreamEvent started(UUID id) { return new StreamEvent(Type.STARTED, id, null, null, null); }
-        static StreamEvent summarizing() { return new StreamEvent(Type.SUMMARIZING, null, null, null, null); }
         static StreamEvent delta(String text) { return new StreamEvent(Type.DELTA, null, text, null, null); }
-        static StreamEvent completed(Chat chat) { return completed(chat, null); }
-        static StreamEvent completed(Chat chat, String warning) {
-            return new StreamEvent(Type.COMPLETED, null, null, chat, warning);
-        }
+        static StreamEvent completed(Chat chat, String warning) { return new StreamEvent(Type.COMPLETED, null, null, chat, warning); }
     }
 }

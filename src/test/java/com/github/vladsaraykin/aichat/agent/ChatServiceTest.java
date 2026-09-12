@@ -333,7 +333,7 @@ class ChatServiceTest {
 
         var next = service.stream("chef", chat.id(), UUID.randomUUID(), "Вопрос 11")
                 .collectList().block(Duration.ofSeconds(2));
-        assertThat(next.getLast().warning()).contains("полному доступному контексту");
+        assertThat(next.getLast().warning()).contains("сообщения сохранены");
         assertThat(service.get("chef", chat.id()).messages()).hasSize(22);
         assertThat(summaryCalls).hasValue(2);
     }

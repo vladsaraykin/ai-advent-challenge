@@ -19,6 +19,13 @@ public interface Agent {
         return answerStream(history, userMessage);
     }
     Mono<ContextSummary> summarize(ContextSummary previous, List<ChatMessage> messages);
+    default Mono<com.github.vladsaraykin.aichat.agent.domain.ContextMemory> updateFacts(
+            com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user) {
+        return Mono.error(new UnsupportedOperationException("Facts are not supported"));
+    }
+    default Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user) {
+        return answerStream(chat.summary(), chat.messages(), user);
+    }
 
     record AnswerPart(String delta, ChatMessage completed) {
         public static AnswerPart delta(String text) { return new AnswerPart(text, null); }

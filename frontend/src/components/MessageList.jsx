@@ -41,7 +41,8 @@ export default function MessageList({ messages, agent, pending, draft, streamedA
             {streamPhase === 'summarizing' ? 'Сжимаем историю…' : 'Ответ поступает…'}</div>
         </article>
         : <div className="waiting" role="status"><i />{streamPhase === 'summarizing'
-          ? 'Сжимаем предыдущую историю…' : `${agent?.name} подключается к модели…`}</div>}</>}
+          ? 'Сжимаем предыдущую историю…' : streamPhase === 'updating_facts'
+            ? 'Обновляем факты диалога…' : `${agent?.name} подключается к модели…`}</div>}</>}
     <div ref={bottom} />
   </div>
 }

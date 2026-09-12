@@ -50,8 +50,14 @@ async function stream(path, body, handlers = {}) {
 export const agentApi = {
   agents: () => request(''),
   chats: agentId => request(`/${encodeURIComponent(agentId)}/chats`),
-  create: agentId => request(`/${encodeURIComponent(agentId)}/chats`, { method: 'POST' }),
+  create: (agentId, strategy = 'SUMMARY') => request(`/${encodeURIComponent(agentId)}/chats`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy })
+  }),
+  fork: (agentId, chatId, names) => request(chatPath(agentId, chatId) + '/branches', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(names)
+  }),
   chat: (agentId, chatId) => request(chatPath(agentId, chatId)),
+  delete: (agentId, chatId) => request(chatPath(agentId, chatId), { method: 'DELETE' }),
   send: (agentId, chatId, message) => request(chatPath(agentId, chatId) + '/messages', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(message)
   }),

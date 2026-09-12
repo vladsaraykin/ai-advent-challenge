@@ -35,7 +35,7 @@ public class AgentRegistry implements AgentCatalog {
                     new TokenPricing(requiredDecimal(properties, "pricing.input-per-million-usd"),
                             requiredDecimal(properties, "pricing.cached-input-per-million-usd"),
                             requiredDecimal(properties, "pricing.output-per-million-usd")),
-                    compression(properties));
+                    compression(properties), management(properties));
             if (loaded.putIfAbsent(definition.id(), new ConfiguredAgent(definition, model)) != null) {
                 throw new IllegalArgumentException("Duplicate agent id: " + definition.id());
             }
@@ -60,11 +60,23 @@ public class AgentRegistry implements AgentCatalog {
     }
 
     private static AgentDefinition.ContextCompression compression(Properties properties) {
-        boolean enabled = Boolean.parseBoolean(properties.getProperty("context-compression.enabled", "false"));
+        boolean modern = properties.containsKey("context-management.summary.enabled");
+        String prefix = modern ? "context-management.summary." : "context-compression.";
+        boolean enabled = Boolean.parseBoolean(properties.getProperty(prefix + "enabled", "false"));
         return new AgentDefinition.ContextCompression(enabled,
-                Integer.parseInt(properties.getProperty("context-compression.recent-messages", "10")),
-                Integer.parseInt(properties.getProperty("context-compression.summary-batch-size", "10")),
-                Integer.parseInt(properties.getProperty("context-compression.summary-max-completion-tokens", "1000")),
-                properties.getProperty("context-compression.system-prompt", enabled ? null : "disabled"));
+                Integer.parseInt(properties.getProperty(prefix + "recent-messages", "10")),
+                Integer.parseInt(properties.getProperty(prefix + (modern ? "batch-size" : "summary-batch-size"), "10")),
+                Integer.parseInt(properties.getProperty(prefix + (modern ? "max-completion-tokens" : "summary-max-completion-tokens"), "1000")),
+                properties.getProperty(prefix + "system-prompt", enabled ? null : "disabled"));
+    }
+    private static AgentDefinition.ContextManagement management(Properties p) {
+        var defaults = AgentDefinition.ContextManagement.defaults();
+        return new AgentDefinition.ContextManagement(
+                com.github.vladsaraykin.aichat.agent.domain.ContextStrategyType.valueOf(
+                        p.getProperty("context-management.default-strategy", "SUMMARY").toUpperCase(Locale.ROOT)),
+                Integer.parseInt(p.getProperty("context-management.sliding-window.recent-messages", "10")),
+                Integer.parseInt(p.getProperty("context-management.facts.recent-messages", "10")),
+                Integer.parseInt(p.getProperty("context-management.facts.max-completion-tokens", "1000")),
+                p.getProperty("context-management.facts.system-prompt", defaults.factsPrompt()));
     }
 }

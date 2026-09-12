@@ -8,4 +8,5 @@ public interface ChatRepository {
     List<Chat> list(String agentId);
     Chat get(String agentId, UUID chatId);
     void save(Chat chat);
+    void delete(String agentId, UUID chatId);
 }

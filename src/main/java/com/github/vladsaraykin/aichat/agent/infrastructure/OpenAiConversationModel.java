@@ -88,6 +88,11 @@ public class OpenAiConversationModel implements ConversationModel {
                 definition.systemPrompt(), "llm_stream");
     }
 
+    @Override public Flux<StreamPart> extractFacts(AgentDefinition definition, List<ChatMessage> messages) {
+        return streamCall(definition, null, messages, prompt(definition, null, messages, true),
+                definition.systemPrompt(), "llm_facts");
+    }
+
     @Override public Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
                                            List<ChatMessage> messages) {
         var compression = definition.compression();

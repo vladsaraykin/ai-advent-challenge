@@ -23,6 +23,9 @@ public interface ConversationModel {
                                   List<ChatMessage> messages) {
         return Mono.fromSupplier(() -> reply(definition, messages));
     }
+    default Flux<StreamPart> extractFacts(AgentDefinition definition, List<ChatMessage> messages) {
+        return stream(definition, messages);
+    }
 
     record Reply(String text, ChatMessage.Metrics metrics) { }
     record StreamPart(String delta, Reply completed) {

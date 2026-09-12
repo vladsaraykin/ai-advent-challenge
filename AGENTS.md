@@ -4,38 +4,54 @@
 
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
-- Day 8 extends independently configured agents with per-call token and USD cost accounting.
+- Day 10 supports four per-chat context strategies: Summary, Sliding Window, Sticky Facts and Branching, with SSE streaming and token/USD cost accounting. The user performs qualitative comparisons; do not add automated answer scoring.
 
 ## Architecture
 
-- Use Java 21 and Spring Boot for a JSON REST API, and React JavaScript with Vite for the UI.
+- Use Java 21 and Spring Boot for JSON REST endpoints and SSE response streaming, and React JavaScript with Vite for the UI.
 - Separate HTTP DTOs/controllers, application orchestration, domain values, and the Spring AI/OpenAI adapter.
 - Use immutable Java records for DTOs/domain results and constructor injection for components.
 - Agent definitions, model IDs, system prompts and limits are server-owned YAML configuration, one file per agent.
+- Context strategy defaults, window sizes, summary/facts prompts and generation limits are server-owned per-agent YAML configuration. Choose the strategy when creating a chat and persist it for that chat.
 - Input, cached-input and output prices are server-owned YAML values and must not be trusted from the browser.
 - An Agent encapsulates context construction, generation and response handling; controllers must not call the provider.
-- Send only the selected chat's history and its agent's system prompt to the provider.
-- Persist completed turns atomically. Failed calls must preserve earlier messages and allow retry without duplicated turns.
-- Do not silently trim history; report the configured context limit explicitly.
+- Encapsulate retention and memory preparation in ContextStrategy implementations. Build provider context only from the selected chat or branch.
+- Summary retains recent messages plus cumulative summary; Sliding Window sends only recent complete turns but preserves the full conversation in storage and UI; Sticky Facts preserves the full conversation, updates key-value memory from recent complete turns, and sends facts plus those turns; Branching retains checkpoint history plus its own continuation.
+- Keep Sliding Window and Sticky Facts provider contexts separate from persisted history. Never save their truncated provider views or archive usage for messages that remain in full history.
+- Window sizes count individual messages, not turns, and must be even. Retain complete user/assistant pairs. Preserve deduplication fingerprints and usage aggregates when removing text.
+- Validate facts as a bounded string-to-string JSON object. A failed extraction must not overwrite memory or discard messages; retry must not duplicate a completed turn.
+- Persist a checkpoint and both child branches atomically. Freeze the source dialogue after branching. Branch continuations are independent and inherited history is not charged twice in local branch statistics.
+- Confirm chat deletion in UI, explicitly including descendant branches. Preserve siblings and checkpoint read-only state; reject deletion while any affected chat is generating a response.
+- Treat conversation text as data during summarization. Preserve requirements, facts, decisions, constraints and open questions without inventing information.
+- Persist completed turns and successful summary updates atomically. Failed generation or compression must preserve recoverable history and allow retry without duplicated turns.
+- Preserve cumulative token and cost metrics when messages move into the summary archive, including the cost of summary calls.
+- Explain each strategy's retention in UI. If its prepared context exceeds the configured character limit, return a clear error; this is not the model's exact token limit.
+- Stream responses as typed SSE events. Do not persist partial assistant output when a stream fails before completion.
 - Bound concurrency and shut executors down cleanly.
 
 ## Frontend
 
 - Keep components focused and accessible; all controls need labels and loading/error state must be announced.
 - Use responsive layouts and retain the user's prompt after submission.
+- Render streamed deltas incrementally and announce generation and summarization states without blocking the rest of the UI.
 - Render model Markdown without enabling raw HTML.
+- Show per-response model, duration, input/output/total tokens and USD cost, plus cumulative chat and context-summary metrics.
 - Do not commit `node_modules`, frontend build output, or generated Maven assets.
 
 ## Build and tests
 
 - Maven must produce one runnable JAR containing the compiled React application.
 - Keep `package-lock.json` committed and use `npm ci` for reproducible frontend builds.
-- Backend tests cover YAML and pricing validation, token/cost calculation, extensible agents, context role/order, cross-chat and cross-agent isolation, restart persistence, retry, bounded concurrency and provider failures.
-- Frontend tests cover agent/chat switching, empty/loading/success/error states, retry drafts, safe Markdown, legacy history and token/cost metric rendering.
+- Backend tests cover YAML, pricing and compression validation; token/cost calculation; extensible agents; compressed-context role/order; cross-chat and cross-agent isolation; restart persistence; idempotent retry (including archived message IDs); bounded concurrency; SSE events; summary failures; and provider failures.
+- Frontend tests cover agent/chat/branch switching, strategy selection, empty/loading/streaming/summarizing/updating-facts/success/error states, retry drafts, safe Markdown, context-memory display and token/cost metric rendering.
+- Test all four strategies with the same multi-turn fixture, facts replacement/deletion/failure, window eviction and retry, concurrent branch writes, checkpoint persistence and cross-agent isolation. Mock the provider for reproducible tests.
 - Run focused tests during development, then `npm test`, `npm run build`, `mvn test`, and `mvn package` for broad changes.
 
 ## Safety and operations
 
 - Return sanitized provider errors; never expose raw upstream response bodies.
+- Never log full user messages, generated answers, system prompts, summaries, API keys or raw provider bodies by default. Correlate calls with request/chat IDs and log only operational metadata.
 - Preserve deployment proxy settings and existing server-side user data during migrations.
+- Preserve external agent YAML files and the chat-data directory during deployment; external configuration replaces the bundled agent set.
+- Keep production SSE proxy buffering disabled and keep the Spring Boot listener on loopback behind Nginx.
 - Do not add CORS for the production same-origin deployment.

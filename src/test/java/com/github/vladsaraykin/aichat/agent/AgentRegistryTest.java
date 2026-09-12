@@ -74,4 +74,27 @@ class AgentRegistryTest {
         assertThatThrownBy(() -> new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml"))
                 .hasMessageContaining("compression");
     }
+
+    @Test void loadsStrategyDefaultsAndRejectsInvalidFactsWindow() throws Exception {
+        String settings = """
+                context-management:
+                  default-strategy: FACTS
+                  sliding-window:
+                    recent-messages: 6
+                  facts:
+                    recent-messages: 8
+                    max-completion-tokens: 512
+                    system-prompt: Extract JSON facts.
+                """;
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + settings);
+        var registry = new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml");
+        var config = registry.get("custom").definition().contextManagement();
+        assertThat(config.defaultStrategy().name()).isEqualTo("FACTS");
+        assertThat(config.slidingMessages()).isEqualTo(6);
+        assertThat(config.factsMessages()).isEqualTo(8);
+        assertThat(config.factsMaxTokens()).isEqualTo(512);
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + settings.replace("recent-messages: 8", "recent-messages: 7"));
+        assertThatThrownBy(() -> new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml"))
+                .hasMessageContaining("context management");
+    }
 }
