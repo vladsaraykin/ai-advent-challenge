@@ -92,6 +92,22 @@ public class OpenAiConversationModel implements ConversationModel {
         return streamCall(definition, null, messages, prompt(definition, null, messages, true),
                 definition.systemPrompt(), "llm_facts");
     }
+    @Override public Flux<StreamPart> extractMemory(AgentDefinition definition, List<ChatMessage> messages) {
+        return streamCall(definition, null, messages, memoryPrompt(definition, messages),
+                definition.systemPrompt(), "llm_memory");
+    }
+
+    static Prompt memoryPrompt(AgentDefinition definition, List<ChatMessage> messages) {
+        var request = prompt(definition, null, messages, true);
+        var options = ((OpenAiChatOptions) request.getOptions()).mutate()
+                .responseFormat(org.springframework.ai.openai.OpenAiChatModel.ResponseFormat.builder()
+                        .type(org.springframework.ai.openai.OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT).build()).build();
+        return new Prompt(request.getInstructions(), options);
+    }
+    @Override public Flux<StreamPart> extractQuestions(AgentDefinition definition, List<ChatMessage> messages) {
+        return streamCall(definition, null, messages, memoryPrompt(definition, messages),
+                definition.systemPrompt(), "llm_questions");
+    }
 
     @Override public Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
                                            List<ChatMessage> messages) {

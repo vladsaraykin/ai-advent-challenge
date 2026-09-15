@@ -18,10 +18,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AgentControllerTest {
     @TempDir Path directory;
     @Test void servesAgentsAndValidatesRequestsAndChatOwnership() throws Exception {
-        var registry = new AgentRegistry((definition, messages) -> new ConversationModel.Reply("ok",
+        var registry = LegacyAgents.catalog((definition, messages) -> new ConversationModel.Reply("ok",
                 new ChatMessage.Metrics(definition.model(), 12, 2, 0, 3, 5, 0, 5, 10,
                         new BigDecimal("0.00000200"), new BigDecimal("0.00000800"),
-                        new BigDecimal("0.00001000"), "stop")), "classpath:agents/*.yaml");
+                        new BigDecimal("0.00001000"), "stop")));
         var service = new ChatService(registry, new FileChatRepository(directory.toString()));
         var controller = new AgentController(service);
         var mvc = MockMvcBuilders.standaloneSetup(controller)

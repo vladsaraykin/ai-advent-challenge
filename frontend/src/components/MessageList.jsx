@@ -38,10 +38,12 @@ export default function MessageList({ messages, agent, pending, draft, streamedA
           <div className="message-author">{agent?.name}</div>
           <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{streamedAnswer}</ReactMarkdown></div>
           <div className="stream-status" role="status"><i />
-            {streamPhase === 'summarizing' ? 'Сжимаем историю…' : 'Ответ поступает…'}</div>
+            {streamPhase === 'syncing_questions' ? 'Сохраняем вопросы в память задачи…'
+              : streamPhase === 'summarizing' ? 'Сжимаем историю…' : 'Ответ поступает…'}</div>
         </article>
         : <div className="waiting" role="status"><i />{streamPhase === 'summarizing'
-          ? 'Сжимаем предыдущую историю…' : streamPhase === 'updating_facts'
+          ? 'Сжимаем предыдущую историю…' : streamPhase === 'syncing_questions' ? 'Сохраняем вопросы в память задачи…'
+            : streamPhase === 'updating_memory' ? 'Обновляем память задачи…' : streamPhase === 'updating_facts'
             ? 'Обновляем факты диалога…' : `${agent?.name} подключается к модели…`}</div>}</>}
     <div ref={bottom} />
   </div>

@@ -88,7 +88,7 @@ public record ContextSummary(String content, int summarizedMessages, Instant upd
 
         public static ArchivedUsage empty() { return new ArchivedUsage(0, 0, 0, 0, 0, null); }
 
-        static ArchivedUsage add(ArchivedUsage previous, List<ChatMessage> messages) {
+        public static ArchivedUsage add(ArchivedUsage previous, List<ChatMessage> messages) {
             int calls = previous.calls();
             int pricedCalls = previous.pricedCalls();
             int promptTokens = previous.promptTokens();

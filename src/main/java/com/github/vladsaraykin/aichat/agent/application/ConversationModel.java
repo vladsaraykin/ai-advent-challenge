@@ -26,6 +26,12 @@ public interface ConversationModel {
     default Flux<StreamPart> extractFacts(AgentDefinition definition, List<ChatMessage> messages) {
         return stream(definition, messages);
     }
+    default Flux<StreamPart> extractMemory(AgentDefinition definition, List<ChatMessage> messages) {
+        return stream(definition, messages);
+    }
+    default Flux<StreamPart> extractQuestions(AgentDefinition definition, List<ChatMessage> messages) {
+        return stream(definition, messages);
+    }
 
     record Reply(String text, ChatMessage.Metrics metrics) { }
     record StreamPart(String delta, Reply completed) {

@@ -4,7 +4,7 @@ export const formatUsd = value => new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', minimumFractionDigits: 6, maximumFractionDigits: 8
 }).format(Number(value || 0))
 
-export function summarizeUsage(messages, contextSummary, memory) {
+export function summarizeUsage(messages, contextSummary, memory, workingMemory) {
   const result = messages.reduce((summary, message) => {
     if (!message.metrics) return summary
     summary.calls += 1
@@ -34,7 +34,7 @@ export function summarizeUsage(messages, contextSummary, memory) {
     result.totalTokens += Number(contextSummary.totalTokens || 0)
     result.totalCostUsd += Number(contextSummary.totalCostUsd || 0)
   }
-  for (const usage of [memory?.archivedUsage, memory?.extractionUsage]) {
+  for (const usage of [memory?.archivedUsage, memory?.extractionUsage, workingMemory?.usage]) {
     if (usage) for (const key of Object.keys(result)) result[key] += Number(usage[key] || 0)
   }
   return result

@@ -48,6 +48,15 @@ async function stream(path, body, handlers = {}) {
 }
 
 export const agentApi = {
+  memory: agentId => request(`/${encodeURIComponent(agentId)}/memory`),
+  putMemory: (agentId, id, body) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'PUT', body),
+  deleteMemory: (agentId, id, version) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'DELETE', { version }),
+  editTask: (agentId, chatId, body) => jsonRequest(chatPath(agentId, chatId) + '/task', 'PUT', body),
+  advanceTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/advance', 'POST', { version }),
+  acceptProposal: (agentId, chatId, id, version, taskVersion) => jsonRequest(chatPath(agentId, chatId)
+    + `/proposals/${encodeURIComponent(id)}/accept`, 'POST', { version, taskVersion }),
+  rejectProposal: (agentId, chatId, id, version) => jsonRequest(chatPath(agentId, chatId)
+    + `/proposals/${encodeURIComponent(id)}/reject`, 'POST', { version }),
   agents: () => request(''),
   chats: agentId => request(`/${encodeURIComponent(agentId)}/chats`),
   create: (agentId, strategy = 'SUMMARY') => request(`/${encodeURIComponent(agentId)}/chats`, {
@@ -63,4 +72,7 @@ export const agentApi = {
   }),
   sendStream: (agentId, chatId, message, handlers) =>
     stream(chatPath(agentId, chatId) + '/messages/stream', message, handlers)
+}
+function jsonRequest(path, method, body) {
+  return request(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }

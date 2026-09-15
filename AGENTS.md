@@ -4,7 +4,7 @@
 
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
-- Day 10 supports four per-chat context strategies: Summary, Sliding Window, Sticky Facts and Branching, with SSE streaming and token/USD cost accounting. The user performs qualitative comparisons; do not add automated answer scoring.
+- Day 11 adds explicit short-term, working and long-term memory for the architect. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
 
 ## Architecture
 
@@ -28,6 +28,16 @@
 - Explain each strategy's retention in UI. If its prepared context exceeds the configured character limit, return a clear error; this is not the model's exact token limit.
 - Stream responses as typed SSE events. Do not persist partial assistant output when a stream fails before completion.
 - Bound concurrency and shut executors down cleanly.
+
+## Memory layers
+
+- Memory layers are server-configured per agent. `Chat.messages`/summary is short-term; `Chat.workingMemory` is task-local; long-term memory uses a separate repository/directory and is isolated per agent, GLOBAL or PROJECT scope.
+- One chat is one task. New chats must not inherit working memory; branches copy task state independently and reset inherited extraction usage. Never import another project's entries without an explicit matching project key.
+- LLM extraction only proposes task data and memory candidates; validate strict JSON and source quotes. Never let the model advance stages or persist long-term entries. Long-term writes require explicit UI confirmation/manual editing.
+- Confirm stages through deterministic transitions; requirement changes invalidate confirmation. Persist task updates with completed turns, and retain prior state on failed extraction or generation. Avoid duplicate facts extraction for layered agents.
+- After generating an answer for a nonempty task, extract its unanswered clarification questions separately; validate source quotes and merge with unresolved questions before atomic turn persistence. This step must not alter decisions or long-term memory. Announce `syncing_questions`, count the extra call, and preserve prior state on failure. The next user-message extraction resolves answered/cancelled questions.
+- Long-term entries use optimistic versions and atomic writes. Keep resolved proposal IDs so deleting an accepted entry does not resurrect the old candidate. Deleting a chat does not delete explicitly saved long-term memory; explain this in UI.
+- This remains a single-owner application without authentication; do not claim per-user isolation. Preserve the long-term directory in backups/deployments; concurrent multi-JVM file writers are unsupported.
 
 ## Frontend
 

@@ -7,7 +7,13 @@ import java.util.UUID;
 public record Chat(UUID id, String agentId, String title, Instant createdAt,
                    Instant updatedAt, ContextSummary summary, List<ChatMessage> messages,
                    ContextStrategyType strategy, ContextMemory memory, UUID parentChatId,
-                   UUID checkpointId, List<Chat> branches, Boolean readOnly) {
+                   UUID checkpointId, List<Chat> branches, Boolean readOnly, WorkingMemory workingMemory) {
+    public Chat(UUID id, String agentId, String title, Instant createdAt, Instant updatedAt,
+                ContextSummary summary, List<ChatMessage> messages, ContextStrategyType strategy,
+                ContextMemory memory, UUID parentChatId, UUID checkpointId, List<Chat> branches, Boolean readOnly) {
+        this(id, agentId, title, createdAt, updatedAt, summary, messages, strategy, memory, parentChatId,
+                checkpointId, branches, readOnly, WorkingMemory.empty());
+    }
     public Chat(UUID id, String agentId, String title, Instant createdAt,
                 Instant updatedAt, ContextSummary summary, List<ChatMessage> messages) {
         this(id, agentId, title, createdAt, updatedAt, summary, messages,
@@ -23,6 +29,7 @@ public record Chat(UUID id, String agentId, String title, Instant createdAt,
         memory = memory == null ? ContextMemory.empty() : memory;
         branches = branches == null ? List.of() : List.copyOf(branches);
         readOnly = Boolean.TRUE.equals(readOnly) || !branches.isEmpty();
+        workingMemory = workingMemory == null ? WorkingMemory.empty() : workingMemory;
     }
     public static Chat create(String agentId) {
         Instant now = Instant.now();
@@ -34,7 +41,11 @@ public record Chat(UUID id, String agentId, String title, Instant createdAt,
     private Chat copy(ContextSummary nextSummary, List<ChatMessage> nextMessages, ContextMemory nextMemory,
                       ContextStrategyType type, UUID parent, UUID checkpoint, List<Chat> children) {
         return new Chat(id, agentId, title, createdAt, updatedAt, nextSummary, nextMessages,
-                type, nextMemory, parent, checkpoint, children, readOnly);
+                type, nextMemory, parent, checkpoint, children, readOnly, workingMemory);
+    }
+    public Chat withWorkingMemory(WorkingMemory value) {
+        return new Chat(id, agentId, title, createdAt, Instant.now(), summary, messages, strategy, memory,
+                parentChatId, checkpointId, branches, readOnly, value);
     }
     public Chat withMemory(ContextMemory value) {
         return copy(summary, messages, value, strategy, parentChatId, checkpointId, branches);
@@ -64,7 +75,7 @@ public record Chat(UUID id, String agentId, String title, Instant createdAt,
         var inherited = messages.stream().map(m -> new ChatMessage(m.id(), m.role(), m.content(), m.createdAt(), null)).toList();
         Instant now = Instant.now();
         return new Chat(UUID.randomUUID(), agentId, name, now, now, null, inherited, strategy,
-                ContextMemory.empty(), id, checkpoint, List.of(), false);
+                ContextMemory.empty(), id, checkpoint, List.of(), false, workingMemory.inherited());
     }
     public Chat append(ChatMessage user, ChatMessage assistant) {
         var updated = new java.util.ArrayList<>(messages);
@@ -73,7 +84,7 @@ public record Chat(UUID id, String agentId, String title, Instant createdAt,
         String nextTitle = messages.isEmpty() ? user.content().replaceAll("\\s+", " ").strip() : title;
         if (nextTitle.length() > 70) nextTitle = nextTitle.substring(0, 70) + "…";
         return new Chat(id, agentId, nextTitle, createdAt, assistant.createdAt(), summary, updated,
-                strategy, memory, parentChatId, checkpointId, branches, readOnly);
+                strategy, memory, parentChatId, checkpointId, branches, readOnly, workingMemory);
     }
     public Chat compact(ContextSummary updatedSummary, int removedMessages) {
         if (removedMessages < 1 || removedMessages > messages.size()) {

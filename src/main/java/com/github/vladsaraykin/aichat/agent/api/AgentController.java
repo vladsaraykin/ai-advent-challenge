@@ -22,13 +22,14 @@ public class AgentController {
     public record AgentView(String id, String name, String description, String model, int maxCompletionTokens,
                             boolean contextCompression, int recentMessages, int summaryBatchSize,
                             ContextStrategyType defaultStrategy, List<ContextStrategyType> strategies,
-                            int slidingMessages, int factsMessages) {
+                            int slidingMessages, int factsMessages, boolean memoryLayers, int memoryRecentMessages) {
         static AgentView from(AgentDefinition definition) {
             return new AgentView(definition.id(), definition.name(), definition.description(),
                     definition.model(), definition.maxCompletionTokens(), definition.compression().enabled(),
                     definition.compression().recentMessages(), definition.compression().batchSize(),
                     definition.contextManagement().defaultStrategy(), List.of(ContextStrategyType.values()),
-                    definition.contextManagement().slidingMessages(), definition.contextManagement().factsMessages());
+                    definition.contextManagement().slidingMessages(), definition.contextManagement().factsMessages(),
+                    definition.memoryLayers().enabled(), definition.memoryLayers().recentMessages());
         }
     }
     public record ChatSummary(UUID id, String agentId, String title, Instant updatedAt, int messageCount,

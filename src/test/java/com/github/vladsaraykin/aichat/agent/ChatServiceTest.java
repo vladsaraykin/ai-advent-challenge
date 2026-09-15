@@ -25,7 +25,7 @@ class ChatServiceTest {
                 new BigDecimal("0.00003600"), "stop"));
     }
     private ChatService service(ConversationModel model) throws Exception {
-        return new ChatService(new AgentRegistry(model, "classpath:agents/*.yaml"), new FileChatRepository(directory.toString()));
+        return new ChatService(LegacyAgents.catalog(model), new FileChatRepository(directory.toString()));
     }
 
     @Test void isolatesAgentsAndChatsAndRestoresHistoryAfterRestart() throws Exception {

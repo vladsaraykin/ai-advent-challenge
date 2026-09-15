@@ -7,6 +7,38 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 class AgentRegistryTest {
+    @Test void loadsArchitectMemoryLayersAndValidatesConfiguration() throws Exception {
+        var registry = new AgentRegistry((d, m) -> null, "classpath:agents/*.yaml");
+        assertThat(registry.get("architect").definition().memoryLayers().enabled()).isTrue();
+        assertThat(registry.get("architect").definition().model()).isEqualTo("gpt-5.6-sol");
+        assertThat(registry.get("architect").definition().memoryLayers().maxCompletionTokens()).isEqualTo(8192);
+        assertThat(registry.get("architect").definition().memoryLayers().questionsMaxTokens()).isEqualTo(4096);
+        assertThat(registry.get("architect").definition().memoryLayers().questionsPrompt()).contains("questions");
+        assertThat(registry.get("architect").definition().pricing()).isEqualTo(registry.get("techno").definition().pricing());
+        assertThat(registry.get("chef").definition().memoryLayers().enabled()).isFalse();
+        assertThatThrownBy(() -> new com.github.vladsaraykin.aichat.agent.domain.AgentDefinition.MemoryLayers(true, 3, 3000, "prompt"))
+                .hasMessageContaining("memory layer");
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + "memory-layers:\n  enabled: true\n");
+        assertThatThrownBy(() -> new AgentRegistry((d, m) -> null, directory.toUri() + "*.yaml"))
+                .hasMessageContaining("memory layer");
+    }
+    @Test void questionSyncSettingsHaveDefaultsAndRejectInvalidLimits() throws Exception {
+        String settings = "memory-layers:\n  enabled: true\n  system-prompt: Extract task JSON.\n";
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + settings);
+        var defaults = new AgentRegistry((d, m) -> null, directory.toUri() + "*.yaml")
+                .get("custom").definition().memoryLayers();
+        assertThat(defaults.questionsMaxTokens()).isEqualTo(4096);
+        assertThat(defaults.questionsPrompt()).contains("questions");
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + settings
+                + "  questions-max-tokens: 1024\n  questions-prompt: Extract questions JSON.\n");
+        var custom = new AgentRegistry((d, m) -> null, directory.toUri() + "*.yaml")
+                .get("custom").definition().memoryLayers();
+        assertThat(custom.questionsMaxTokens()).isEqualTo(1024);
+        assertThat(custom.questionsPrompt()).isEqualTo("Extract questions JSON.");
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + settings + "  questions-max-tokens: 0\n");
+        assertThatThrownBy(() -> new AgentRegistry((d, m) -> null, directory.toUri() + "*.yaml"))
+                .hasMessageContaining("memory layer");
+    }
     @TempDir Path directory;
     private static final String CONFIG = """
             id: custom

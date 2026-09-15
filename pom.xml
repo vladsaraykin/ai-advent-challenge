@@ -15,7 +15,7 @@
     <artifactId>ai-advent-challenge</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>AI Advent Challenge</name>
-    <description>Day 10 agent context strategies</description>
+    <description>Day 11 architect memory layers</description>
 
     <properties>
         <java.version>21</java.version>

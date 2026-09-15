@@ -19,6 +19,19 @@ public interface Agent {
         return answerStream(history, userMessage);
     }
     Mono<ContextSummary> summarize(ContextSummary previous, List<ChatMessage> messages);
+    default Mono<com.github.vladsaraykin.aichat.agent.domain.WorkingMemory> completeMemory(
+            com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user, ChatMessage assistant) {
+        return Mono.just(chat.workingMemory());
+    }
+    default Mono<com.github.vladsaraykin.aichat.agent.domain.WorkingMemory> prepareMemory(
+            com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user,
+            List<com.github.vladsaraykin.aichat.agent.domain.LongTermMemory.Entry> entries) {
+        return Mono.just(chat.workingMemory());
+    }
+    default Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user,
+            List<com.github.vladsaraykin.aichat.agent.domain.LongTermMemory.Entry> entries) {
+        return answerStream(chat, user);
+    }
     default Mono<com.github.vladsaraykin.aichat.agent.domain.ContextMemory> updateFacts(
             com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user) {
         return Mono.error(new UnsupportedOperationException("Facts are not supported"));

@@ -17,6 +17,16 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class OpenAiConversationModelTest {
+    @Test void memoryUsesJsonModeWithoutChangingNormalChatFormat() {
+        var d = new AgentDefinition("architect", "Architect", "Architecture", "gpt-5.6-sol", "Return JSON", 8192,
+                null, 120, 60000, PRICING);
+        var options = (OpenAiChatOptions) OpenAiConversationModel.memoryPrompt(d, List.of()).getOptions();
+        assertThat(options.getModel()).isEqualTo("gpt-5.6-sol");
+        assertThat(options.getMaxCompletionTokens()).isEqualTo(8192);
+        assertThat(options.getMaxTokens()).isNull();
+        assertThat(options.getResponseFormat().getType()).isEqualTo(org.springframework.ai.openai.OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT);
+        assertThat(((OpenAiChatOptions) OpenAiConversationModel.prompt(d, List.of()).getOptions()).getResponseFormat()).isNull();
+    }
     private static final TokenPricing PRICING = new TokenPricing(
             new BigDecimal("0.40"), new BigDecimal("0.10"), new BigDecimal("1.60"));
     private final AgentDefinition definition = new AgentDefinition("architect", "Architect", "Architecture",

@@ -35,7 +35,7 @@ public class AgentRegistry implements AgentCatalog {
                     new TokenPricing(requiredDecimal(properties, "pricing.input-per-million-usd"),
                             requiredDecimal(properties, "pricing.cached-input-per-million-usd"),
                             requiredDecimal(properties, "pricing.output-per-million-usd")),
-                    compression(properties), management(properties));
+                    compression(properties), management(properties), layers(properties));
             if (loaded.putIfAbsent(definition.id(), new ConfiguredAgent(definition, model)) != null) {
                 throw new IllegalArgumentException("Duplicate agent id: " + definition.id());
             }
@@ -78,5 +78,14 @@ public class AgentRegistry implements AgentCatalog {
                 Integer.parseInt(p.getProperty("context-management.facts.recent-messages", "10")),
                 Integer.parseInt(p.getProperty("context-management.facts.max-completion-tokens", "1000")),
                 p.getProperty("context-management.facts.system-prompt", defaults.factsPrompt()));
+    }
+    private static AgentDefinition.MemoryLayers layers(Properties p) {
+        boolean enabled = Boolean.parseBoolean(p.getProperty("memory-layers.enabled", "false"));
+        return new AgentDefinition.MemoryLayers(enabled,
+                Integer.parseInt(p.getProperty("memory-layers.recent-messages", "10")),
+                Integer.parseInt(p.getProperty("memory-layers.max-completion-tokens", "3000")),
+                p.getProperty("memory-layers.system-prompt", enabled ? null : "disabled"),
+                Integer.parseInt(p.getProperty("memory-layers.questions-max-tokens", "4096")),
+                p.getProperty("memory-layers.questions-prompt", AgentDefinition.MemoryLayers.defaultQuestionsPrompt()));
     }
 }

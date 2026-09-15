@@ -20,14 +20,16 @@ export default function StrategyPanel({ agent, chat, strategy, onStrategy, disab
           <option key={value} value={value}>{strategyNames[value]}</option>)}
       </select>
     </label> : <strong>{strategyNames[selected] || 'Summary'} · стратегия чата</strong>}
-    <p>{descriptions[selected]}</p>
+    <p>{selected === 'FACTS' && agent?.memoryLayers
+      ? 'Полная история сохраняется. Типизированная рабочая память заменяет Sticky Facts; модель получает память и последние N сообщений.'
+      : descriptions[selected]}</p>
     {(selected === 'SLIDING_WINDOW' || selected === 'FACTS') && <p>
       Окно: {selected === 'FACTS' ? agent?.factsMessages || 10 : agent?.slidingMessages || 10} сообщений.
       {' '}Вне контекста: {Math.max(0, (chat?.messages?.length || 0)
         - (selected === 'FACTS' ? agent?.factsMessages || 10 : agent?.slidingMessages || 10))}.
       {' '}История сохранена.
     </p>}
-    {selected === 'FACTS' && <details className="facts-memory" open>
+    {selected === 'FACTS' && !agent?.memoryLayers && <details className="facts-memory" open>
       <summary>Факты диалога</summary>
       {Object.keys(memory?.facts || {}).length ? <table><thead><tr><th>Ключ</th><th>Значение</th></tr></thead>
         <tbody>{Object.entries(memory.facts).map(([key, value]) => <tr key={key}><th scope="row">{key}</th><td>{value}</td></tr>)}</tbody>

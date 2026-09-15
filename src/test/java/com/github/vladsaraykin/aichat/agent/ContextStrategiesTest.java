@@ -21,7 +21,7 @@ class ContextStrategiesTest {
                 new BigDecimal("0.000032"), new BigDecimal("0.000036"), "stop"));
     }
     private ChatService service(ConversationModel model) throws Exception {
-        return new ChatService(new AgentRegistry(model, "classpath:agents/*.yaml"), new FileChatRepository(directory.toString()));
+        return new ChatService(LegacyAgents.catalog(model), new FileChatRepository(directory.toString()));
     }
     private static boolean extracting(AgentDefinition d) { return d.systemPrompt().equals(d.contextManagement().factsPrompt()); }
 

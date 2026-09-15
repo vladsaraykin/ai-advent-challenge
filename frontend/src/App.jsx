@@ -7,6 +7,7 @@ import MessageComposer from './components/MessageComposer'
 import ChatUsageSummary from './components/ChatUsageSummary'
 import ContextMemory from './components/ContextMemory'
 import StrategyPanel from './components/StrategyPanel'
+import MemoryLayers from './components/MemoryLayers'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
 const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
@@ -26,6 +27,7 @@ export default function App({ api = agentApi }) {
   const [error, setError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [memoryBusy, setMemoryBusy] = useState(false)
   const [reload, setReload] = useState(0)
   const retry = useRef(null)
   const busyRef = useRef(false)
@@ -156,6 +158,8 @@ export default function App({ api = agentApi }) {
       }
       let completed
       await api.sendStream(agentId, current.id, { messageId: retry.current.messageId, content }, {
+        updating_memory: () => setStreamPhase('updating_memory'),
+        syncing_questions: () => setStreamPhase('syncing_questions'),
         updating_facts: () => setStreamPhase('updating_facts'),
         summarizing: () => setStreamPhase('summarizing'),
         delta: part => { setStreamPhase('streaming'); setStreamedAnswer(value => value + (part.text || '')) },
@@ -171,15 +175,18 @@ export default function App({ api = agentApi }) {
 
   return <main className="app-shell">
     <ChatSidebar agents={agents} agentId={agentId} chats={chats} chatId={chat?.id}
-      disabled={pending || loading || !!deleteTarget || deleting} onAgent={setAgentId} onChat={openChat}
+      disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onAgent={setAgentId} onChat={openChat}
       onCreate={createChat} onDelete={(target, trigger) => { deleteTrigger.current = trigger; setDeleteTarget(target) }} />
     <section className="conversation" aria-label="Диалог с агентом">
       <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>
         <p>{agent?.description || 'Выберите помощника для своей задачи'}</p></div>
         {agent && <span className="model-name">{agent.model}</span>}</header>
       {!loading && <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
-        disabled={pending || loading || !!deleteTarget || deleting} onFork={forkChat} onOpen={openChat} chats={chats} />}
-      {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory} />}
+        disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />}
+      {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory} workingMemory={chat?.workingMemory} />}
+      {!loading && agent?.memoryLayers && <MemoryLayers key={`${agentId}/${chat?.id || 'new'}`} agent={agent} chat={chat} api={api}
+        disabled={pending || !!deleteTarget || deleting} onChat={updateChat}
+        onBusy={value => { busyRef.current = value; setMemoryBusy(value) }} />}
       {!loading && (chat?.strategy || strategy) === 'SUMMARY' && <ContextMemory agent={agent} summary={chat?.summary} />}
       {loading ? <div className="loading-state" role="status">Загружаем чаты…</div>
         : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} draft={draft}
@@ -188,8 +195,10 @@ export default function App({ api = agentApi }) {
       {error && <div className="error-banner" role="alert"><span>{error}</span>
         {!pending && <button type="button" onClick={() => { setError(''); setReload(value => value + 1) }}>Обновить</button>}</div>}
       <MessageComposer draft={draft} onChange={value => setDrafts(current => ({ ...current, [draftKey]: value }))}
-        onSubmit={send} pending={pending} disabled={loading || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting} />
-      <p className="context-note">Контекст и память изолированы для каждого чата и каждой ветки.</p>
+        onSubmit={send} pending={pending} disabled={loading || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy} />
+      <p className="context-note">{agent?.memoryLayers
+        ? 'История и задача изолированы по чатам и веткам. Подтверждённая долговременная память общая для владельца этого агента.'
+        : 'Контекст и память изолированы для каждого чата и каждой ветки.'}</p>
     </section>
     {deleteTarget && <div className="delete-overlay"><section role="alertdialog" aria-modal="true"
       aria-labelledby="delete-title" aria-describedby="delete-description" className="delete-confirm"
@@ -206,7 +215,8 @@ export default function App({ api = agentApi }) {
       }}>
       <h2 id="delete-title">Удалить чат «{deleteTarget.title}»?</h2>
       <p id="delete-description">История, память и все дочерние ветки этого чата будут удалены.
-        Соседние ветки сохранятся. Отменить удаление нельзя.</p>
+        Соседние ветки сохранятся. Отменить удаление нельзя.
+        {agent?.memoryLayers && ' Отдельно сохранённая долговременная память останется.'}</p>
       {deleting && <p role="status">Удаляем чат…</p>}
       <button type="button" autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Отмена</button>
       <button type="button" disabled={deleting} onClick={deleteChat}>Удалить</button>
