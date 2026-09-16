@@ -8,11 +8,16 @@ import ChatUsageSummary from './components/ChatUsageSummary'
 import ContextMemory from './components/ContextMemory'
 import StrategyPanel from './components/StrategyPanel'
 import MemoryLayers from './components/MemoryLayers'
+import AuthScreen from './components/AuthScreen'
+import UserProfile from './components/UserProfile'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
 const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
 
 export default function App({ api = agentApi }) {
+  const supportsAuth = typeof api.me === 'function'
+  const [profile, setProfile] = useState(supportsAuth ? null : { username: 'test', displayName: 'Test', version: 0, constraints: [] })
+  const [authLoading, setAuthLoading] = useState(supportsAuth)
   const [agents, setAgents] = useState([])
   const [agentId, setAgentId] = useState('')
   const [chats, setChats] = useState([])
@@ -37,6 +42,15 @@ export default function App({ api = agentApi }) {
   const draft = drafts[draftKey] || ''
 
   useEffect(() => {
+    if (!supportsAuth) return
+    let active = true
+    api.me().then(value => { if (active) setProfile(value) })
+      .catch(() => { if (active) { api.clearCredentials(); setProfile(null) } })
+      .finally(() => { if (active) setAuthLoading(false) })
+    return () => { active = false }
+  }, [api, supportsAuth])
+
+  useEffect(() => {
     if (!deleteTarget && deleteTrigger.current) {
       const target = deleteTrigger.current.isConnected ? deleteTrigger.current : document.querySelector('.new-chat')
       target?.focus()
@@ -45,6 +59,7 @@ export default function App({ api = agentApi }) {
   }, [deleteTarget])
 
   useEffect(() => {
+    if (!profile) return
     let active = true
     setLoading(true)
     api.agents().then(items => {
@@ -55,7 +70,7 @@ export default function App({ api = agentApi }) {
       else { setError('Нет настроенных агентов'); setLoading(false) }
     }).catch(exception => { if (active) { setError(exception.message); setLoading(false) } })
     return () => { active = false }
-  }, [api, reload])
+  }, [api, reload, profile?.username])
 
   useEffect(() => {
     if (!agentId) return
@@ -173,6 +188,14 @@ export default function App({ api = agentApi }) {
     finally { busyRef.current = false; setPending(false); setStreamedAnswer(''); setStreamPhase('') }
   }
 
+  if (authLoading) return <main className="auth-shell"><div className="loading-state" role="status">Проверяем профиль…</div></main>
+  if (!profile) return <AuthScreen api={api} onAuthenticated={value => { setProfile(value); setReload(current => current + 1) }} />
+
+  function logout() {
+    api.clearCredentials(); setProfile(null); setAgents([]); setAgentId(''); setChats([]); setChat(null)
+    setError(''); setNotice(''); retry.current = null
+  }
+
   return <main className="app-shell">
     <ChatSidebar agents={agents} agentId={agentId} chats={chats} chatId={chat?.id}
       disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onAgent={setAgentId} onChat={openChat}
@@ -180,7 +203,9 @@ export default function App({ api = agentApi }) {
     <section className="conversation" aria-label="Диалог с агентом">
       <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>
         <p>{agent?.description || 'Выберите помощника для своей задачи'}</p></div>
-        {agent && <span className="model-name">{agent.model}</span>}</header>
+        <div className="header-actions">{agent && <span className="model-name">{agent.model}</span>}
+          <UserProfile profile={profile} api={api} disabled={pending || loading || memoryBusy}
+            onProfile={setProfile} onLogout={logout} /></div></header>
       {!loading && <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
         disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />}
       {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory} workingMemory={chat?.workingMemory} />}
@@ -197,8 +222,8 @@ export default function App({ api = agentApi }) {
       <MessageComposer draft={draft} onChange={value => setDrafts(current => ({ ...current, [draftKey]: value }))}
         onSubmit={send} pending={pending} disabled={loading || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy} />
       <p className="context-note">{agent?.memoryLayers
-        ? 'История и задача изолированы по чатам и веткам. Подтверждённая долговременная память общая для владельца этого агента.'
-        : 'Контекст и память изолированы для каждого чата и каждой ветки.'}</p>
+        ? 'История и задача изолированы по чатам и веткам. Профиль и подтверждённая долговременная память принадлежат текущему пользователю.'
+        : 'Контекст и история изолированы по пользователям, чатам и веткам. Активный профиль применяется автоматически.'}</p>
     </section>
     {deleteTarget && <div className="delete-overlay"><section role="alertdialog" aria-modal="true"
       aria-labelledby="delete-title" aria-describedby="delete-description" className="delete-confirm"

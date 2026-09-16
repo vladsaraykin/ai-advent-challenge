@@ -62,8 +62,19 @@ public final class ConfiguredAgent implements Agent {
 
     @Override public Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat,
             ChatMessage user, List<com.github.vladsaraykin.aichat.agent.domain.LongTermMemory.Entry> entries) {
-        if (!definition.memoryLayers().enabled()) return answerStream(chat, user);
+        return answerStream(chat, user, entries, null);
+    }
+
+    @Override public Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat,
+            ChatMessage user, List<com.github.vladsaraykin.aichat.agent.domain.LongTermMemory.Entry> entries,
+            com.github.vladsaraykin.aichat.user.domain.UserProfile profile) {
+        if (!definition.memoryLayers().enabled()) {
+            var personalized = definition.withPrompt(definition.systemPrompt()
+                    + AgentContextBuilder.profilePrompt(profile), definition.maxCompletionTokens());
+            return new ConfiguredAgent(personalized, model).answerStream(chat, user);
+        }
         var configured = definition.withPrompt(definition.systemPrompt()
+                + AgentContextBuilder.profilePrompt(profile)
                 + AgentContextBuilder.memoryPrompt(chat.workingMemory(), entries), definition.maxCompletionTokens());
         // In layered mode working memory replaces the untyped Sticky Facts extraction.
         return new ConfiguredAgent(configured, model).answerStream(chat.summary(), chat.messages(), user);

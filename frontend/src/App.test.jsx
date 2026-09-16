@@ -37,6 +37,35 @@ const makeApi = () => ({
 beforeEach(() => localStorage.clear())
 
 describe('agent conversations', () => {
+  it('authenticates, edits personalization and switches profile by logging out', async () => {
+    const api = makeApi()
+    const profile = { username: 'alice', displayName: 'Алиса', responseStyle: 'Кратко',
+      responseFormat: 'Markdown', constraints: [], version: 0 }
+    api.me = vi.fn().mockRejectedValueOnce(new Error('Требуется вход')).mockResolvedValue(profile)
+    api.setCredentials = vi.fn()
+    api.clearCredentials = vi.fn()
+    api.register = vi.fn()
+    api.updateProfile = vi.fn().mockResolvedValue({ ...profile, responseStyle: 'Подробно', version: 1 })
+    render(<App api={api} />)
+    await screen.findByRole('heading', { name: 'Войти в свой профиль' })
+    await userEvent.type(screen.getByLabelText('Логин'), 'alice')
+    await userEvent.type(screen.getByLabelText('Пароль'), 'secret-123')
+    await userEvent.click(screen.getByRole('button', { name: 'Войти', exact: true }))
+    expect(await screen.findByRole('button', { name: 'Открыть профиль Алиса' })).toBeInTheDocument()
+    expect(api.setCredentials).toHaveBeenCalledWith('alice', 'secret-123')
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть профиль Алиса' }))
+    const style = screen.getByLabelText('Стиль ответа')
+    await userEvent.clear(style); await userEvent.type(style, 'Подробно')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить профиль' }))
+    await waitFor(() => expect(api.updateProfile).toHaveBeenCalledWith(expect.objectContaining({
+      version: 0, responseStyle: 'Подробно'
+    })))
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть профиль Алиса' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Выйти и сменить профиль' }))
+    expect(await screen.findByRole('heading', { name: 'Войти в свой профиль' })).toBeInTheDocument()
+    expect(api.clearCredentials).toHaveBeenCalled()
+  })
+
   it('announces task memory preparation and includes its cost after SSE completion', async () => {
     const api = makeApi()
     api.agents.mockResolvedValue([{ ...agents[0], memoryLayers: true }])

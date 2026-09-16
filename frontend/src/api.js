@@ -1,14 +1,23 @@
-async function request(path, options = {}) {
-  const response = await fetch('/api/agents' + path, options)
+let credentials = ''
+try { credentials = sessionStorage.getItem('agent-lab.basic') || '' } catch { /* Optional storage. */ }
+
+const authHeaders = headers => ({ ...(headers || {}), ...(credentials ? { Authorization: `Basic ${credentials}` } : {}) })
+async function rawRequest(path, options = {}) {
+  const response = await fetch(path, { ...options, headers: authHeaders(options.headers) })
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.message || 'Не удалось выполнить запрос. Попробуйте ещё раз.')
+  if (!response.ok) {
+    const error = new Error(body.message || 'Не удалось выполнить запрос. Попробуйте ещё раз.')
+    error.status = response.status
+    throw error
+  }
   return body
 }
+async function request(path, options = {}) { return rawRequest('/api/agents' + path, options) }
 const chatPath = (agentId, chatId) => `/${encodeURIComponent(agentId)}/chats/${encodeURIComponent(chatId)}`
 
 async function stream(path, body, handlers = {}) {
   const response = await fetch('/api/agents' + path, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
     body: JSON.stringify(body), signal: handlers.signal
   })
   if (!response.ok) {
@@ -48,6 +57,22 @@ async function stream(path, body, handlers = {}) {
 }
 
 export const agentApi = {
+  setCredentials: (username, password) => {
+    credentials = btoa(unescape(encodeURIComponent(`${username}:${password}`)))
+    try { sessionStorage.setItem('agent-lab.basic', credentials) } catch { /* Optional storage. */ }
+  },
+  clearCredentials: () => {
+    credentials = ''
+    try { sessionStorage.removeItem('agent-lab.basic') } catch { /* Optional storage. */ }
+  },
+  me: () => rawRequest('/api/auth/me'),
+  register: body => rawRequest('/api/auth/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }),
+  profile: () => rawRequest('/api/profile'),
+  updateProfile: body => rawRequest('/api/profile', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }),
   memory: agentId => request(`/${encodeURIComponent(agentId)}/memory`),
   putMemory: (agentId, id, body) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'PUT', body),
   deleteMemory: (agentId, id, version) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'DELETE', { version }),

@@ -9,9 +9,19 @@ const encodedStream = chunks => new ReadableStream({
   }
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); agentApi.clearCredentials() })
 
 describe('SSE chat API', () => {
+  it('sends HTTP Basic credentials to protected endpoints', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ username: 'alice' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    }))
+    vi.stubGlobal('fetch', fetch)
+    agentApi.setCredentials('alice', 'secret-123')
+    await expect(agentApi.me()).resolves.toEqual({ username: 'alice' })
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe(`Basic ${btoa('alice:secret-123')}`)
+  })
+
   it('parses events split across network chunks and preserves text whitespace', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(encodedStream([
       'event: started\r\ndata: {"type":"STARTED"}\r\n\r\nevent: delta\r\nda',

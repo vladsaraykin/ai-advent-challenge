@@ -59,3 +59,25 @@
 .memory-entry { padding: 12px; margin: 8px 0; background: white; border: 1px solid #e1e8ec; border-radius: 8px; }
 .memory-entry blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid #adc7c8; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .memory-layers { margin: 0 10px 12px; padding: 12px; } }
+
+.auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 15% 15%, #dceee9, transparent 34%), #f4f0e8; }
+.auth-card, .profile-dialog { width: min(100%, 470px); padding: 34px; border: 1px solid #d6ddd8; border-radius: 20px; background: #fffefa; box-shadow: 0 24px 80px #253d3a22; }
+.auth-card h1, .profile-dialog h2 { margin: 7px 0 10px; color: #183b3a; }
+.auth-card p, .profile-dialog p { color: #62716f; line-height: 1.55; }
+.auth-card form, .profile-dialog form { display: grid; gap: 15px; margin: 24px 0 14px; }
+.auth-card label, .profile-dialog label { display: grid; gap: 6px; font-weight: 650; color: #294846; }
+.auth-card input, .profile-dialog input, .profile-dialog textarea { width: 100%; box-sizing: border-box; border: 1px solid #b8c8c4; border-radius: 9px; padding: 11px; font: inherit; background: white; }
+.eyebrow { color: #887148; font-size: .75rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.primary-action { border: 0 !important; border-radius: 9px; padding: 12px 18px; color: white; background: #1f615b !important; font-weight: 750; cursor: pointer; }
+.link-button, .logout-button { border: 0; padding: 8px 0; background: transparent; color: #29655f; text-decoration: underline; cursor: pointer; }
+.auth-card small { display: block; margin-top: 18px; color: #788481; line-height: 1.45; }
+.header-actions { display: flex; align-items: center; gap: 12px; }
+.profile-chip { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 5px; border: 1px solid #cbd8d5; border-radius: 999px; background: white; color: #294846; cursor: pointer; }
+.profile-chip span { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: white; background: #2c6e67; }
+.profile-chip strong { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-overlay { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 20px; background: #172b2a77; }
+.profile-dialog { max-height: calc(100vh - 40px); overflow: auto; }
+.profile-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.profile-actions button { padding: 10px 14px; border: 1px solid #c4d1ce; border-radius: 8px; background: white; }
+.logout-button { color: #9b3f31; }
+@media (max-width: 640px) { .auth-card, .profile-dialog { padding: 22px; } .conversation-header { align-items: flex-start; } .header-actions { flex-direction: column-reverse; align-items: flex-end; } .profile-chip strong { display: none; } }

@@ -14,6 +14,8 @@ app:
     location: ${AGENT_CONFIG_LOCATION:classpath:agents/*.yaml}
   chats:
     directory: ${CHAT_DATA_DIR:data/agent-chats}
+  users:
+    directory: ${USER_DATA_DIR:${CHAT_DATA_DIR:data/agent-chats}/_users}
   openai:
     proxy:
       enabled: ${OPENAI_PROXY_ENABLED:false}

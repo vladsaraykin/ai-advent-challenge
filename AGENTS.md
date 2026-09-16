@@ -4,7 +4,7 @@
 
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
-- Day 11 adds explicit short-term, working and long-term memory for the architect. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
+- Day 12 adds authenticated user profiles and personalization on top of the Day 11 memory layers. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
 
 ## Architecture
 
@@ -37,7 +37,9 @@
 - Confirm stages through deterministic transitions; requirement changes invalidate confirmation. Persist task updates with completed turns, and retain prior state on failed extraction or generation. Avoid duplicate facts extraction for layered agents.
 - After generating an answer for a nonempty task, extract its unanswered clarification questions separately; validate source quotes and merge with unresolved questions before atomic turn persistence. This step must not alter decisions or long-term memory. Announce `syncing_questions`, count the extra call, and preserve prior state on failure. The next user-message extraction resolves answered/cancelled questions.
 - Long-term entries use optimistic versions and atomic writes. Keep resolved proposal IDs so deleting an accepted entry does not resurrect the old candidate. Deleting a chat does not delete explicitly saved long-term memory; explain this in UI.
-- This remains a single-owner application without authentication; do not claim per-user isolation. Preserve the long-term directory in backups/deployments; concurrent multi-JVM file writers are unsupported.
+- HTTP Basic authentication identifies the active profile. Store BCrypt password hashes, never plaintext passwords, and isolate chats and long-term memory by authenticated username.
+- User profiles contain display name, response style, response format and explicit constraints. Keep them separate from chat/task memory and add the active profile to every primary answer prompt; explicit current-request instructions override profile defaults.
+- Profile updates use optimistic versions and atomic file replacement. Preserve user/profile, chat and long-term directories in backups/deployments; concurrent multi-JVM file writers are unsupported.
 
 ## Frontend
 
