@@ -167,7 +167,7 @@ export default function App({ api = agentApi }) {
       const current = chat || await api.create(agentId, strategy)
       if (!chat) updateChat(current)
       const key = `${agentId}/${current.id}`
-      setDrafts(values => ({ ...values, [draftKey]: '', [key]: draft }))
+      setDrafts(values => ({ ...values, [draftKey]: '', [key]: '' }))
       if (!retry.current || retry.current.chatId !== current.id || retry.current.content !== content) {
         retry.current = { chatId: current.id, content, messageId: newMessageId() }
       }
@@ -184,7 +184,11 @@ export default function App({ api = agentApi }) {
       updateChat(completed)
       setDrafts(values => ({ ...values, [key]: '' }))
       retry.current = null
-    } catch (exception) { setError(exception.message) }
+    } catch (exception) {
+      setDrafts(values => ({ ...values, [draftKey]: content,
+        ...(retry.current?.chatId ? { [`${agentId}/${retry.current.chatId}`]: content } : {}) }))
+      setError(exception.message)
+    }
     finally { busyRef.current = false; setPending(false); setStreamedAnswer(''); setStreamPhase('') }
   }
 
@@ -200,19 +204,16 @@ export default function App({ api = agentApi }) {
     <ChatSidebar agents={agents} agentId={agentId} chats={chats} chatId={chat?.id}
       disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onAgent={setAgentId} onChat={openChat}
       onCreate={createChat} onDelete={(target, trigger) => { deleteTrigger.current = trigger; setDeleteTarget(target) }} />
+    <div className={`agent-workspace ${chat ? 'with-inspector' : ''}`}>
     <section className="conversation" aria-label="Диалог с агентом">
       <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>
         <p>{agent?.description || 'Выберите помощника для своей задачи'}</p></div>
         <div className="header-actions">{agent && <span className="model-name">{agent.model}</span>}
           <UserProfile profile={profile} api={api} disabled={pending || loading || memoryBusy}
             onProfile={setProfile} onLogout={logout} /></div></header>
-      {!loading && <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
+      {!loading && !chat && <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
         disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />}
       {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory} workingMemory={chat?.workingMemory} />}
-      {!loading && agent?.memoryLayers && <MemoryLayers key={`${agentId}/${chat?.id || 'new'}`} agent={agent} chat={chat} api={api}
-        disabled={pending || !!deleteTarget || deleting} onChat={updateChat}
-        onBusy={value => { busyRef.current = value; setMemoryBusy(value) }} />}
-      {!loading && (chat?.strategy || strategy) === 'SUMMARY' && <ContextMemory agent={agent} summary={chat?.summary} />}
       {loading ? <div className="loading-state" role="status">Загружаем чаты…</div>
         : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} draft={draft}
           streamedAnswer={streamedAnswer} streamPhase={streamPhase} />}
@@ -225,6 +226,15 @@ export default function App({ api = agentApi }) {
         ? 'История и задача изолированы по чатам и веткам. Профиль и подтверждённая долговременная память принадлежат текущему пользователю.'
         : 'Контекст и история изолированы по пользователям, чатам и веткам. Активный профиль применяется автоматически.'}</p>
     </section>
+    {!loading && chat && <aside className="agent-inspector" aria-label="Параметры и память текущего чата">
+      <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
+        disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />
+      {agent?.memoryLayers && <MemoryLayers key={`${agentId}/${chat.id}`} agent={agent} chat={chat} api={api}
+        disabled={pending || !!deleteTarget || deleting} onChat={updateChat}
+        onBusy={value => { busyRef.current = value; setMemoryBusy(value) }} />}
+      {(chat.strategy || strategy) === 'SUMMARY' && <ContextMemory agent={agent} summary={chat.summary} />}
+    </aside>}
+    </div>
     {deleteTarget && <div className="delete-overlay"><section role="alertdialog" aria-modal="true"
       aria-labelledby="delete-title" aria-describedby="delete-description" className="delete-confirm"
       onKeyDown={event => {

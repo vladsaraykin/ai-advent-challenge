@@ -22,6 +22,19 @@ describe('SSE chat API', () => {
     expect(fetch.mock.calls[0][1].headers.Authorization).toBe(`Basic ${btoa('alice:secret-123')}`)
   })
 
+  it('calls task pause and resume commands with optimistic versions', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'one' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    }))
+    vi.stubGlobal('fetch', fetch)
+    await agentApi.pauseTask('architect', 'one', 4)
+    await agentApi.resumeTask('architect', 'one', 5)
+    expect(fetch.mock.calls[0][0]).toBe('/api/agents/architect/chats/one/task/pause')
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST', body: '{"version":4}' })
+    expect(fetch.mock.calls[1][0]).toBe('/api/agents/architect/chats/one/task/resume')
+    expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'POST', body: '{"version":5}' })
+  })
+
   it('parses events split across network chunks and preserves text whitespace', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(encodedStream([
       'event: started\r\ndata: {"type":"STARTED"}\r\n\r\nevent: delta\r\nda',

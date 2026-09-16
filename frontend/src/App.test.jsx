@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -145,6 +145,27 @@ describe('agent conversations', () => {
     expect(screen.getByLabelText('Ваше сообщение')).toHaveValue('')
     expect(api.sendStream.mock.calls[0].slice(0, 2)).toEqual(['architect', 'one'])
     expect(api.sendStream.mock.calls[0][2].content).toBe('Мой вопрос')
+  })
+
+  it('sends with Enter, clears immediately and keeps Shift+Enter for a new line', async () => {
+    const api = makeApi()
+    let finish
+    api.sendStream.mockImplementation((agentId, chatId, message, handlers) => new Promise(resolve => {
+      finish = () => { handlers.completed({ chat: answer(makeChat('one')) }); resolve() }
+    }))
+    render(<App api={api} />)
+    const composer = await screen.findByLabelText('Ваше сообщение')
+    await userEvent.type(composer, 'Первая строка')
+    fireEvent.keyDown(composer, { key: 'Enter', shiftKey: true })
+    expect(api.sendStream).not.toHaveBeenCalled()
+    fireEvent.change(composer, { target: { value: 'Первая строка\nВторая строка' } })
+    expect(composer).toHaveValue('Первая строка\nВторая строка')
+    fireEvent.keyDown(composer, { key: 'Enter' })
+    await waitFor(() => expect(api.sendStream).toHaveBeenCalledTimes(1))
+    expect(api.sendStream.mock.calls[0][2].content).toBe('Первая строка\nВторая строка')
+    expect(screen.getByLabelText('Ваше сообщение')).toHaveValue('')
+    finish()
+    await screen.findByText('Ответ агента')
   })
 
   it('retains draft on provider failure and reuses message ID on retry', async () => {

@@ -2,8 +2,17 @@ import { useEffect, useState } from 'react'
 import { newMessageId } from '../messageId'
 import { formatTokens, formatUsd } from '../usage'
 
-const stages = { REQUIREMENTS: 'Сбор требований', DESIGN: 'Проектирование', REVIEW: 'Проверка', DONE: 'Завершено' }
+const stages = {
+  REQUIREMENTS: 'Planning · сбор требований', DESIGN: 'Execution · проектирование',
+  REVIEW: 'Validation · проверка', DONE: 'Done · завершено'
+}
 const actions = { REQUIREMENTS: 'Подтвердить требования', DESIGN: 'Передать на проверку', REVIEW: 'Подтвердить завершение' }
+const expectedActions = {
+  DEFINE_GOAL: 'Опишите цель задачи', PROVIDE_REQUIREMENTS: 'Добавьте требования',
+  ANSWER_OPEN_QUESTIONS: 'Ответьте на открытые вопросы', CONFIRM_REQUIREMENTS: 'Подтвердите требования',
+  RECORD_DECISIONS: 'Зафиксируйте архитектурные решения', CONFIRM_DESIGN: 'Передайте решение на проверку',
+  VALIDATE_RESULT: 'Проверьте результат и подтвердите завершение', RESUME_TASK: 'Продолжите задачу', NONE: 'Действий не требуется'
+}
 const taskFields = { requirements: 'Требования', constraints: 'Ограничения', decisions: 'Подтверждённые решения' }
 const blankEntry = () => ({ id: newMessageId(), scope: 'GLOBAL', projectKey: '', key: '', value: '' })
 
@@ -54,7 +63,7 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
   const recent = chat?.strategy === 'SLIDING_WINDOW' ? agent.slidingMessages
     : chat?.strategy === 'FACTS' ? agent.factsMessages : null
   return <section className="memory-layers" aria-label="Слои памяти архитектора">
-    <div className="memory-heading"><h2>Память архитектора</h2>
+    <div className="memory-heading"><h2>Состояние и память</h2>
       <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
         {expanded ? 'Свернуть память' : 'Показать память'}</button></div>
     <div hidden={!expanded}>
@@ -65,8 +74,14 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
         {chat?.summary && ' Также передаётся накопительное summary.'}</p>
       <p>Окно контекста не удаляет историю в Sliding Window и Sticky Facts. Summary заменяет старый текст пересказом.</p>
     </details>
-    <details open><summary>2. Рабочая — текущая задача</summary>
-      <p><strong>Этап: {stages[working?.stage] || stages.REQUIREMENTS}</strong> · версия {working?.version || 0}</p>
+    <details open><summary>2. Рабочая — Task State Machine</summary>
+      <div className="task-state-card" aria-label="Состояние задачи">
+        <p><strong>Этап:</strong> {stages[working?.stage] || stages.REQUIREMENTS}</p>
+        <p><strong>Статус:</strong> {working?.status === 'PAUSED' ? 'На паузе' : 'Активна'}</p>
+        <p><strong>Текущий шаг:</strong> {working?.currentStep || 'Определить цель задачи'}</p>
+        <p><strong>Ожидаемое действие:</strong> {expectedActions[working?.expectedAction] || 'Опишите цель задачи'}</p>
+        <small>Версия состояния: {working?.version || 0}</small>
+      </div>
       <p>Проект: {working?.projectKey || 'не выбран — знания других проектов не используются'}</p>
       <p>Цель: {working?.goal || 'Появится после обсуждения задачи'}</p>
       {Object.entries(taskFields).map(([field, title]) => <div key={field}><h3>{title}</h3>
@@ -75,11 +90,16 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
       <h3>Открытые вопросы</h3>
       {working?.openQuestions?.length ? <ul>{working.openQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul> : <p>Нет сохранённых вопросов</p>}
       <button type="button" disabled={blocked || readOnly} onClick={editTask}>Изменить данные задачи</button>
-      {actions[working?.stage || 'REQUIREMENTS'] && <button type="button" disabled={blocked || readOnly}
+      {actions[working?.stage || 'REQUIREMENTS'] && <button type="button" disabled={blocked || readOnly || working?.status === 'PAUSED'}
         onClick={() => run(async () => onChat(await api.advanceTask(agent.id, chat.id, working?.version || 0)))}>
         {actions[working?.stage || 'REQUIREMENTS']}</button>}
+      {working?.status === 'PAUSED'
+        ? <button type="button" disabled={blocked || readOnly}
+          onClick={() => run(async () => onChat(await api.resumeTask(agent.id, chat.id, working?.version || 0)))}>Продолжить задачу</button>
+        : <button type="button" disabled={blocked || readOnly}
+          onClick={() => run(async () => onChat(await api.pauseTask(agent.id, chat.id, working?.version || 0)))}>Поставить на паузу</button>}
       {!chat && <p>Сначала отправьте сообщение, чтобы создать задачу.</p>}
-      <p>Этап подтверждается только кнопкой. Изменение требований возвращает задачу на согласование.</p>
+      <p>Переходы выполняет приложение. LLM обновляет данные, но не может изменить этап. После паузы вся история и память сохраняются.</p>
       {taskEdit && <form onSubmit={e => { e.preventDefault(); run(async () => {
         const task = { goal: taskEdit.goal, openQuestions: taskEdit.openQuestions.split('\n').map(q => q.trim()).filter(Boolean) }
         for (const field of Object.keys(taskFields)) task[field] = JSON.parse(taskEdit[field])

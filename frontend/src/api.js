@@ -78,6 +78,8 @@ export const agentApi = {
   deleteMemory: (agentId, id, version) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'DELETE', { version }),
   editTask: (agentId, chatId, body) => jsonRequest(chatPath(agentId, chatId) + '/task', 'PUT', body),
   advanceTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/advance', 'POST', { version }),
+  pauseTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/pause', 'POST', { version }),
+  resumeTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/resume', 'POST', { version }),
   acceptProposal: (agentId, chatId, id, version, taskVersion) => jsonRequest(chatPath(agentId, chatId)
     + `/proposals/${encodeURIComponent(id)}/accept`, 'POST', { version, taskVersion }),
   rejectProposal: (agentId, chatId, id, version) => jsonRequest(chatPath(agentId, chatId)

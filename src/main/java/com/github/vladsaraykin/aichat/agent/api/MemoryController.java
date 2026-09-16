@@ -41,6 +41,10 @@ public class MemoryController {
     }
     @PostMapping("/chats/{chatId}/task/advance") public Chat advance(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId,
             @Valid @RequestBody Version request) { return service.advanceTask(owner(principal), agentId, chatId, request.version()); }
+    @PostMapping("/chats/{chatId}/task/pause") public Chat pause(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId,
+            @Valid @RequestBody Version request) { return service.pauseTask(owner(principal), agentId, chatId, request.version()); }
+    @PostMapping("/chats/{chatId}/task/resume") public Chat resume(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId,
+            @Valid @RequestBody Version request) { return service.resumeTask(owner(principal), agentId, chatId, request.version()); }
     @PostMapping("/chats/{chatId}/proposals/{id}/accept") public LongTermMemory accept(Principal principal, @PathVariable String agentId,
             @PathVariable UUID chatId, @PathVariable UUID id, @Valid @RequestBody Confirmation request) {
         return service.acceptProposal(owner(principal), agentId, chatId, request.version(), request.taskVersion(), id);

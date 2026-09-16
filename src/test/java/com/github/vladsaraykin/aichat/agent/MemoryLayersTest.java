@@ -16,8 +16,11 @@ import static org.assertj.core.api.Assertions.*;
 class MemoryLayersTest {
     @Test void assistantQuestionsAreSavedImmediatelyBlockAdvanceAndCanBeAnsweredNextTurn() throws Exception {
         var service = service((d, messages) -> reply(extraction(d) ? EXTRACT
-                : "Нужно уточнить:\n1. Какой email-провайдер?\n2. Уточните способ получения уведомлений."),
-                "{\"questions\":[\"Какой email-провайдер?\",\"Уточните способ получения уведомлений.\",\"Какой email-провайдер?\"]}");
+                : "Нужно уточнить:\n1. Какой email-провайдер?\n2. Уточните способ получения уведомлений.\n"
+                + "Подтвердите завершение этапа требований в панели памяти; после этого можно переходить к архитектуре компонентов."),
+                "{\"questions\":[\"Какой email-провайдер?\",\"Уточните способ получения уведомлений.\","
+                + "\"Подтвердите завершение этапа требований в панели памяти; после этого можно переходить к архитектуре компонентов.\","
+                + "\"Какой email-провайдер?\"]}");
         var chat = service.create("architect");
         UUID request = UUID.randomUUID();
         var events = service.stream("architect", chat.id(), request, "Проектируем сервис").collectList().block();
@@ -234,6 +237,14 @@ class MemoryLayersTest {
         assertThat(root.workingMemory().stage()).isEqualTo(WorkingMemory.Stage.REQUIREMENTS);
         root = service.advanceTask("architect", id, root.workingMemory().version());
         assertThat(root.workingMemory().stage()).isEqualTo(WorkingMemory.Stage.DESIGN);
+        root = service.pauseTask(ChatRepository.LEGACY_OWNER, "architect", id, root.workingMemory().version());
+        assertThat(root.workingMemory().status()).isEqualTo(WorkingMemory.Status.PAUSED);
+        var restartedWhilePaused = service((d, messages) -> reply(extraction(d) ? EXTRACT : "ok"));
+        assertThat(restartedWhilePaused.get("architect", id).workingMemory().expectedAction())
+                .isEqualTo(WorkingMemory.ExpectedAction.RESUME_TASK);
+        root = restartedWhilePaused.resumeTask(ChatRepository.LEGACY_OWNER, "architect", id, root.workingMemory().version());
+        assertThat(root.workingMemory().stage()).isEqualTo(WorkingMemory.Stage.DESIGN);
+        assertThat(root.workingMemory().goal()).isEqualTo("Сервис уведомлений");
         long version = root.workingMemory().version();
         assertThatThrownBy(() -> service.advanceTask("architect", id, version)).hasMessageContaining("решения");
         root = service.editTask("architect", id, version, "", new MemoryService.TaskData("Сервис уведомлений", Map.of("channel", "email"),

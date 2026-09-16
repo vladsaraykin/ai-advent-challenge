@@ -58,6 +58,12 @@ public class ChatService {
     public Chat advanceTask(String ownerId, String agentId, UUID chatId, long version) {
         return mutateTask(ownerId, agentId, chatId, version, MemoryService::advance);
     }
+    public Chat pauseTask(String ownerId, String agentId, UUID chatId, long version) {
+        return mutateTask(ownerId, agentId, chatId, version, MemoryService::pause);
+    }
+    public Chat resumeTask(String ownerId, String agentId, UUID chatId, long version) {
+        return mutateTask(ownerId, agentId, chatId, version, MemoryService::resume);
+    }
     public Chat rejectProposal(String agentId, UUID chatId, long version, UUID proposalId) {
         return rejectProposal(ChatRepository.LEGACY_OWNER, agentId, chatId, version, proposalId);
     }
@@ -74,8 +80,9 @@ public class ChatService {
             try { updated = chat.withWorkingMemory(update.apply(chat.workingMemory())); }
             catch (IllegalArgumentException e) { throw new ChatFailure(ChatFailure.Kind.INVALID, "Проверьте поля памяти и идентификатор проекта."); }
             repository.save(ownerId, updated);
-            log.info("task_memory_updated agentId={} chatId={} version={} stage={}", agentId, chatId,
-                    updated.workingMemory().version(), updated.workingMemory().stage());
+            log.info("task_memory_updated agentId={} chatId={} version={} stage={} status={} expectedAction={}", agentId, chatId,
+                    updated.workingMemory().version(), updated.workingMemory().stage(), updated.workingMemory().status(),
+                    updated.workingMemory().expectedAction());
             return updated;
         } finally { busyChats.remove(key(ownerId, chatId)); }
     }

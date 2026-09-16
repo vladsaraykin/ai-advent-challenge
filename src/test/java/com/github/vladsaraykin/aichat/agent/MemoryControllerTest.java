@@ -51,6 +51,13 @@ class MemoryControllerTest {
         var stream = controller.stream("architect", chat.id(), new AgentController.SendRequest(UUID.randomUUID(), "Мой проект"));
         assertThat(stream.getBody().collectList().block()).extracting(e -> e.event()).contains("started", "updating_memory", "completed");
         mvc.perform(get("/api/agents/architect/chats/" + chat.id())).andExpect(jsonPath("$.workingMemory.goal").value("Сервис уведомлений"));
+        long taskVersion = service.get("architect", chat.id()).workingMemory().version();
+        mvc.perform(post(taskPath + "/pause").contentType("application/json").content("{\"version\":" + taskVersion + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.workingMemory.status").value("PAUSED"))
+                .andExpect(jsonPath("$.workingMemory.expectedAction").value("RESUME_TASK"));
+        mvc.perform(post(taskPath + "/resume").contentType("application/json").content("{\"version\":" + (taskVersion + 1) + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.workingMemory.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.workingMemory.currentStep").isNotEmpty());
         mvc.perform(put("/api/agents/chef/chats/" + chat.id() + "/task").contentType("application/json")
                 .content("{\"version\":0,\"projectKey\":\"\",\"task\":" + MemoryLayersTest.TASK + "}"))
                 .andExpect(status().isBadRequest());
