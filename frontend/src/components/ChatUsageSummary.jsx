@@ -8,8 +8,8 @@ const callWord = value => {
   return 'вызовов'
 }
 
-export default function ChatUsageSummary({ messages, summary, memory, workingMemory }) {
-  const usage = summarizeUsage(messages, summary, memory, workingMemory)
+export default function ChatUsageSummary({ messages, summary, memory, workingMemory, invariants }) {
+  const usage = summarizeUsage(messages, summary, memory, workingMemory, invariants)
   if (!usage.calls) return null
   return <section className="usage-summary" aria-label="Суммарный расход чата">
     <strong>Расход чата</strong>

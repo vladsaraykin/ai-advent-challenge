@@ -64,6 +64,47 @@ public class ChatService {
     public Chat resumeTask(String ownerId, String agentId, UUID chatId, long version) {
         return mutateTask(ownerId, agentId, chatId, version, MemoryService::resume);
     }
+    public Chat putInvariant(String ownerId, String agentId, UUID chatId, long version,
+                             TaskInvariants.Entry entry) {
+        requireInvariants(agentId); lock(ownerId, chatId);
+        try {
+            Chat chat = repository.get(ownerId, agentId, chatId);
+            if (chat.readOnly()) throw new ChatFailure(ChatFailure.Kind.INVALID, "Checkpoint доступен только для чтения.");
+            checkInvariantVersion(chat, version);
+            Chat updated = chat.withInvariants(chat.invariants().put(entry));
+            repository.save(ownerId, updated);
+            log.info("task_invariant_saved agentId={} chatId={} invariantId={} type={} version={}",
+                    agentId, chatId, entry.id(), entry.type(), updated.invariants().version());
+            return updated;
+        } catch (IllegalArgumentException error) {
+            throw new ChatFailure(ChatFailure.Kind.INVALID, "Проверьте поля инварианта.");
+        } finally { busyChats.remove(key(ownerId, chatId)); }
+    }
+    public Chat deleteInvariant(String ownerId, String agentId, UUID chatId, long version, UUID invariantId) {
+        requireInvariants(agentId); lock(ownerId, chatId);
+        try {
+            Chat chat = repository.get(ownerId, agentId, chatId);
+            if (chat.readOnly()) throw new ChatFailure(ChatFailure.Kind.INVALID, "Checkpoint доступен только для чтения.");
+            checkInvariantVersion(chat, version);
+            Chat updated = chat.withInvariants(chat.invariants().delete(invariantId));
+            repository.save(ownerId, updated);
+            log.info("task_invariant_deleted agentId={} chatId={} invariantId={} version={}",
+                    agentId, chatId, invariantId, updated.invariants().version());
+            return updated;
+        } catch (IllegalArgumentException error) {
+            throw new ChatFailure(ChatFailure.Kind.NOT_FOUND, "Инвариант не найден.");
+        } finally { busyChats.remove(key(ownerId, chatId)); }
+    }
+    private void requireInvariants(String agentId) {
+        if (!registry.get(agentId).definition().invariants().enabled()) {
+            throw new ChatFailure(ChatFailure.Kind.INVALID, "Инварианты не включены у этого агента.");
+        }
+    }
+    private static void checkInvariantVersion(Chat chat, long version) {
+        if (chat.invariants().version() != version) {
+            throw new ChatFailure(ChatFailure.Kind.BUSY, "Инварианты уже изменились. Обновите чат и повторите действие.");
+        }
+    }
     public Chat rejectProposal(String agentId, UUID chatId, long version, UUID proposalId) {
         return rejectProposal(ChatRepository.LEGACY_OWNER, agentId, chatId, version, proposalId);
     }
@@ -230,35 +271,110 @@ public class ChatService {
             if (layered) preparation = preparation.flatMap(prepared -> agent.prepareMemory(prepared.chat().withWorkingMemory(
                             prepared.chat().workingMemory().withoutResolved(durable.resolvedProposals())), user, entries)
                     .map(memory -> new Prepared(prepared.chat().withWorkingMemory(memory), prepared.warning(), prepared.memoryFailed())));
-            Flux<StreamEvent> execution = preparation.flatMapMany(prepared ->
-                    agent.answerStream(strategy.context(agent, prepared.chat()), user, entries, profile).concatMap(part -> {
-                        if (part.completed() == null) return Mono.just(StreamEvent.delta(part.delta()));
-                        Mono<Chat> appended = Mono.defer(() -> agent.completeMemory(prepared.chat(), user, part.completed()))
-                                .map(memory -> prepared.chat().withWorkingMemory(memory).append(user, part.completed()));
-                        Flux<StreamEvent> completion = appended.flatMapMany(value -> {
-                            Mono<Prepared> finalized = prepared.memoryFailed()
-                                    ? Mono.just(new Prepared(value, prepared.warning(), true))
-                                    : Mono.defer(() -> strategy.after(agent, value))
-                                        .map(result -> new Prepared(result, prepared.warning(), false))
-                                        .onErrorResume(ChatFailure.class, failure -> summaryFallback(value, failure));
-                            Mono<StreamEvent> completed = finalized.map(result -> {
-                                repository.save(ownerId, result.chat());
-                                log.info("agent_stream_response agentId={} chatId={} requestId={} strategy={} totalTokens={} costUsd={}",
-                                        agentId, chatId, messageId, chat.strategy(), part.completed().metrics().totalTokens(),
-                                        part.completed().metrics().totalCostUsd());
-                                return StreamEvent.completed(result.chat(), result.warning());
-                            });
-                            return phase(prepared.memoryFailed() ? null : strategy.afterPhase(agent, value), completed.flux());
-                        });
-                        return phase(layered && !prepared.chat().workingMemory().goal().isBlank() ? "SYNCING_QUESTIONS" : null,
-                                completion);
-                    }));
+            final Mono<Prepared> finalPreparation = preparation;
+            boolean guardActive = agent.definition().invariants().enabled() && !chat.invariants().entries().isEmpty();
+            Flux<StreamEvent> guarded;
+            if (!guardActive) {
+                guarded = phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
+                        finalPreparation.flatMapMany(prepared -> streamingAnswer(ownerId, agentId, messageId, agent,
+                                strategy, prepared, user, entries, profile, layered)));
+            } else {
+                Mono<Agent.InvariantCheck> requestGuard = Mono.defer(() -> agent.checkInvariants(chat, user, null));
+                guarded = requestGuard.flatMapMany(check -> {
+                    if (!check.allowed()) return rejected(ownerId, agentId, chat, user, check, List.of());
+                    Chat checked = chat.withInvariants(chat.invariants().recordUsage(usage(check.metrics())));
+                    Mono<Prepared> checkedPreparation = finalPreparation.map(value -> new Prepared(
+                            value.chat().withInvariants(checked.invariants()), value.warning(), value.memoryFailed()));
+                    return phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
+                            checkedPreparation.flatMapMany(prepared -> validatedAnswer(ownerId, agentId, messageId,
+                                    agent, strategy, chat, prepared, user, entries, profile, layered)));
+                });
+            }
             return Flux.concat(Flux.just(StreamEvent.started(messageId)),
-                            phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat), execution))
+                            phase(guardActive ? "CHECKING_INVARIANTS" : null, guarded))
                     .doOnError(error -> log.warn("agent_stream_failed agentId={} chatId={} requestId={} errorType={}",
                             agentId, chatId, messageId, error.getClass().getSimpleName()))
                     .doFinally(signal -> release(ownerId, chatId));
         } catch (RuntimeException error) { release(ownerId, chatId); throw error; }
+    }
+    private Flux<StreamEvent> streamingAnswer(String ownerId, String agentId, UUID messageId, Agent agent,
+            ContextStrategy strategy, Prepared prepared, ChatMessage user, List<LongTermMemory.Entry> entries,
+            UserProfile profile, boolean layered) {
+        return agent.answerStream(strategy.context(agent, prepared.chat()), user, entries, profile).concatMap(part -> {
+            if (part.completed() == null) return Mono.just(StreamEvent.delta(part.delta()));
+            Mono<Chat> appended = Mono.defer(() -> agent.completeMemory(prepared.chat(), user, part.completed()))
+                    .map(memory -> prepared.chat().withWorkingMemory(memory).append(user, part.completed()));
+            Flux<StreamEvent> completion = appended.flatMapMany(value -> finalizeTurn(ownerId, agentId,
+                    messageId, agent, strategy, prepared, value, part.completed()));
+            return phase(layered && !prepared.chat().workingMemory().goal().isBlank()
+                    ? "SYNCING_QUESTIONS" : null, completion);
+        });
+    }
+    private Flux<StreamEvent> validatedAnswer(String ownerId, String agentId, UUID messageId, Agent agent,
+            ContextStrategy strategy, Chat original, Prepared prepared, ChatMessage user,
+            List<LongTermMemory.Entry> entries, UserProfile profile, boolean layered) {
+        Mono<Generated> generated = agent.answerStream(strategy.context(agent, prepared.chat()), user, entries, profile)
+                .collectList().map(Generated::from);
+        Flux<StreamEvent> result = generated.flatMapMany(answer -> Flux.concat(
+                Flux.just(StreamEvent.phase(StreamEvent.Type.VALIDATING_ANSWER)),
+                agent.checkInvariants(prepared.chat(), user, answer.completed()).flatMapMany(check -> {
+                    if (!check.allowed()) {
+                        Chat base = prepared.chat().withWorkingMemory(original.workingMemory()).withInvariants(
+                                prepared.chat().invariants().recordUsage(usage(answer.completed().metrics())));
+                        return rejected(ownerId, agentId, base, user, check, List.of());
+                    }
+                    Chat withUsage = prepared.chat().withInvariants(prepared.chat().invariants()
+                            .recordUsage(usage(check.metrics())));
+                    Mono<Chat> appended = Mono.defer(() -> agent.completeMemory(withUsage, user, answer.completed()))
+                            .map(memory -> withUsage.withWorkingMemory(memory).append(user, answer.completed()));
+                    Flux<StreamEvent> completion = appended.flatMapMany(value -> finalizeTurn(ownerId, agentId,
+                            messageId, agent, strategy, prepared, value, answer.completed()));
+                    Flux<StreamEvent> replay = Flux.fromIterable(answer.deltas()).map(StreamEvent::delta);
+                    return Flux.concat(replay, phase(layered && !prepared.chat().workingMemory().goal().isBlank()
+                            ? "SYNCING_QUESTIONS" : null, completion));
+                })));
+        return Flux.concat(Flux.just(StreamEvent.phase(StreamEvent.Type.GENERATING)), result);
+    }
+    private Flux<StreamEvent> finalizeTurn(String ownerId, String agentId, UUID messageId, Agent agent,
+            ContextStrategy strategy, Prepared prepared, Chat value, ChatMessage completed) {
+        Mono<Prepared> finalized = prepared.memoryFailed()
+                ? Mono.just(new Prepared(value, prepared.warning(), true))
+                : Mono.defer(() -> strategy.after(agent, value))
+                    .map(result -> new Prepared(result, prepared.warning(), false))
+                    .onErrorResume(ChatFailure.class, failure -> summaryFallback(value, failure));
+        Mono<StreamEvent> event = finalized.map(result -> {
+            repository.save(ownerId, result.chat());
+            log.info("agent_stream_response agentId={} chatId={} requestId={} strategy={} totalTokens={} costUsd={}",
+                    agentId, result.chat().id(), messageId, result.chat().strategy(),
+                    completed.metrics() == null ? 0 : completed.metrics().totalTokens(),
+                    completed.metrics() == null ? null : completed.metrics().totalCostUsd());
+            return StreamEvent.completed(result.chat(), result.warning());
+        });
+        return phase(prepared.memoryFailed() ? null : strategy.afterPhase(agent, value), event.flux());
+    }
+    private Flux<StreamEvent> rejected(String ownerId, String agentId, Chat chat, ChatMessage user,
+                                       Agent.InvariantCheck check, List<ChatMessage.Metrics> archived) {
+        Chat base = chat.withInvariants(chat.invariants().recordUsage(archived));
+        String text = refusal(base, check);
+        var assistant = new ChatMessage(UUID.randomUUID(), ChatMessage.Role.ASSISTANT, text, Instant.now(), check.metrics());
+        Chat saved = base.append(user, assistant);
+        repository.save(ownerId, saved);
+        log.info("agent_invariant_rejected agentId={} chatId={} requestId={} conflicts={}",
+                agentId, chat.id(), user.id(), check.conflicts().size());
+        return Flux.just(StreamEvent.delta(text), StreamEvent.completed(saved, "Ответ ограничен подтверждёнными инвариантами задачи."));
+    }
+    private static String refusal(Chat chat, Agent.InvariantCheck check) {
+        var text = new StringBuilder("Не могу выполнить запрос в таком виде: он нарушает подтверждённые инварианты задачи.\n");
+        for (var conflict : check.conflicts()) {
+            var entry = chat.invariants().entries().stream().filter(value -> value.id().equals(conflict.invariantId()))
+                    .findFirst().orElseThrow();
+            text.append("\n- **").append(entry.title()).append(":** ").append(entry.rule())
+                    .append(" — ").append(conflict.explanation());
+        }
+        return text.append("\n\nЕсли правило нужно пересмотреть, сначала измените или удалите его в панели инвариантов.").toString();
+    }
+    private static List<ChatMessage.Metrics> usage(ChatMessage.Metrics... values) {
+        return java.util.Arrays.stream(values).filter(Objects::nonNull).toList();
     }
     private Mono<Prepared> summaryFallback(Chat chat, ChatFailure failure) {
         if (chat.strategy() != ContextStrategyType.SUMMARY) return Mono.error(failure);
@@ -284,9 +400,20 @@ public class ChatService {
         };
     }
     private record Prepared(Chat chat, String warning, boolean memoryFailed) { }
+    private record Generated(List<String> deltas, ChatMessage completed) {
+        static Generated from(List<Agent.AnswerPart> parts) {
+            var completed = parts.stream().filter(part -> part.completed() != null).map(Agent.AnswerPart::completed).toList();
+            if (completed.size() != 1) throw new ChatFailure(ChatFailure.Kind.PROVIDER,
+                    "Поток ответа модели завершился некорректно. Повторите отправку.");
+            return new Generated(parts.stream().filter(part -> part.delta() != null)
+                    .map(Agent.AnswerPart::delta).toList(), completed.getFirst());
+        }
+    }
     public record StreamEvent(Type type, UUID messageId, String text, Chat chat, String warning) {
-        public enum Type { STARTED, SUMMARIZING, UPDATING_FACTS, UPDATING_MEMORY, SYNCING_QUESTIONS, DELTA, COMPLETED }
+        public enum Type { STARTED, CHECKING_INVARIANTS, GENERATING, VALIDATING_ANSWER,
+            SUMMARIZING, UPDATING_FACTS, UPDATING_MEMORY, SYNCING_QUESTIONS, DELTA, COMPLETED }
         static StreamEvent started(UUID id) { return new StreamEvent(Type.STARTED, id, null, null, null); }
+        static StreamEvent phase(Type type) { return new StreamEvent(type, null, null, null, null); }
         static StreamEvent delta(String text) { return new StreamEvent(Type.DELTA, null, text, null, null); }
         static StreamEvent completed(Chat chat, String warning) { return new StreamEvent(Type.COMPLETED, null, null, chat, warning); }
     }

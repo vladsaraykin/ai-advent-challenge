@@ -80,6 +80,10 @@ export const agentApi = {
   advanceTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/advance', 'POST', { version }),
   pauseTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/pause', 'POST', { version }),
   resumeTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/resume', 'POST', { version }),
+  putInvariant: (agentId, chatId, id, body) => jsonRequest(chatPath(agentId, chatId)
+    + `/invariants/${encodeURIComponent(id)}`, 'PUT', body),
+  deleteInvariant: (agentId, chatId, id, version) => jsonRequest(chatPath(agentId, chatId)
+    + `/invariants/${encodeURIComponent(id)}`, 'DELETE', { version }),
   acceptProposal: (agentId, chatId, id, version, taskVersion) => jsonRequest(chatPath(agentId, chatId)
     + `/proposals/${encodeURIComponent(id)}/accept`, 'POST', { version, taskVersion }),
   rejectProposal: (agentId, chatId, id, version) => jsonRequest(chatPath(agentId, chatId)

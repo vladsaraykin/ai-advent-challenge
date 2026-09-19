@@ -8,6 +8,7 @@ import ChatUsageSummary from './components/ChatUsageSummary'
 import ContextMemory from './components/ContextMemory'
 import StrategyPanel from './components/StrategyPanel'
 import MemoryLayers from './components/MemoryLayers'
+import InvariantPanel from './components/InvariantPanel'
 import AuthScreen from './components/AuthScreen'
 import UserProfile from './components/UserProfile'
 
@@ -177,6 +178,9 @@ export default function App({ api = agentApi }) {
         syncing_questions: () => setStreamPhase('syncing_questions'),
         updating_facts: () => setStreamPhase('updating_facts'),
         summarizing: () => setStreamPhase('summarizing'),
+        checking_invariants: () => setStreamPhase('checking_invariants'),
+        generating: () => setStreamPhase('generating'),
+        validating_answer: () => setStreamPhase('validating_answer'),
         delta: part => { setStreamPhase('streaming'); setStreamedAnswer(value => value + (part.text || '')) },
         completed: event => { completed = event.chat; if (event.warning) setNotice(event.warning) }
       })
@@ -213,7 +217,8 @@ export default function App({ api = agentApi }) {
             onProfile={setProfile} onLogout={logout} /></div></header>
       {!loading && !chat && <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
         disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />}
-      {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory} workingMemory={chat?.workingMemory} />}
+      {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory}
+        workingMemory={chat?.workingMemory} invariants={chat?.invariants} />}
       {loading ? <div className="loading-state" role="status">Загружаем чаты…</div>
         : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} draft={draft}
           streamedAnswer={streamedAnswer} streamPhase={streamPhase} />}
@@ -230,6 +235,9 @@ export default function App({ api = agentApi }) {
       <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
         disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />
       {agent?.memoryLayers && <MemoryLayers key={`${agentId}/${chat.id}`} agent={agent} chat={chat} api={api}
+        disabled={pending || !!deleteTarget || deleting} onChat={updateChat}
+        onBusy={value => { busyRef.current = value; setMemoryBusy(value) }} />}
+      {agent?.invariants && <InvariantPanel agent={agent} chat={chat} api={api}
         disabled={pending || !!deleteTarget || deleting} onChat={updateChat}
         onBusy={value => { busyRef.current = value; setMemoryBusy(value) }} />}
       {(chat.strategy || strategy) === 'SUMMARY' && <ContextMemory agent={agent} summary={chat.summary} />}

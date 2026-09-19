@@ -41,6 +41,10 @@ public interface Agent {
             com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user) {
         return Mono.error(new UnsupportedOperationException("Facts are not supported"));
     }
+    default Mono<InvariantCheck> checkInvariants(com.github.vladsaraykin.aichat.agent.domain.Chat chat,
+            ChatMessage user, ChatMessage assistant) {
+        return Mono.just(InvariantCheck.allowed(null));
+    }
     default Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user) {
         return answerStream(chat.summary(), chat.messages(), user);
     }
@@ -48,5 +52,12 @@ public interface Agent {
     record AnswerPart(String delta, ChatMessage completed) {
         public static AnswerPart delta(String text) { return new AnswerPart(text, null); }
         public static AnswerPart completed(ChatMessage message) { return new AnswerPart(null, message); }
+    }
+    record InvariantConflict(java.util.UUID invariantId, String evidence, String explanation) { }
+    record InvariantCheck(boolean allowed, List<InvariantConflict> conflicts, ChatMessage.Metrics metrics) {
+        public InvariantCheck { conflicts = conflicts == null ? List.of() : List.copyOf(conflicts); }
+        public static InvariantCheck allowed(ChatMessage.Metrics metrics) {
+            return new InvariantCheck(true, List.of(), metrics);
+        }
     }
 }

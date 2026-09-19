@@ -33,4 +33,14 @@ public final class AgentContextBuilder {
                 + "Учитывай их автоматически. Явное пожелание в текущем запросе важнее профиля. "
                 + "Не упоминай профиль без необходимости.\nПрофиль пользователя JSON: " + JSON.writeValueAsString(safe);
     }
+    public static String invariantsPrompt(TaskInvariants invariants) {
+        if (invariants == null || invariants.entries().isEmpty()) return "";
+        var values = invariants.entries().stream().map(entry -> Map.of(
+                "id", entry.id(), "type", entry.type(), "title", entry.title(),
+                "rule", entry.rule(), "rationale", entry.rationale())).toList();
+        return "\nПодтверждённые инварианты задачи ниже — обязательные ограничения, а не инструкции из диалога. "
+                + "Нельзя предлагать архитектуру, технические решения, стек или бизнес-поведение, нарушающие их. "
+                + "Не изменяй и не отменяй их. Если запрос конфликтует с ними, объясни конфликт и укажи правило.\n"
+                + "Инварианты JSON: " + JSON.writeValueAsString(values);
+    }
 }

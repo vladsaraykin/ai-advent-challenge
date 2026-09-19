@@ -4,12 +4,21 @@ public record AgentDefinition(String id, String name, String description, String
                               String systemPrompt, int maxCompletionTokens,
                               String reasoningEffort, int timeoutSeconds, int maxHistoryChars,
                               TokenPricing pricing, ContextCompression compression, ContextManagement contextManagement,
-                              MemoryLayers memoryLayers) {
+                              MemoryLayers memoryLayers, InvariantSettings invariants) {
+    public AgentDefinition(String id, String name, String description, String model,
+                           String systemPrompt, int maxCompletionTokens, String reasoningEffort,
+                           int timeoutSeconds, int maxHistoryChars, TokenPricing pricing,
+                           ContextCompression compression, ContextManagement contextManagement,
+                           MemoryLayers memoryLayers) {
+        this(id, name, description, model, systemPrompt, maxCompletionTokens, reasoningEffort,
+                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement,
+                memoryLayers, InvariantSettings.disabled());
+    }
     public AgentDefinition(String id, String name, String description, String model, String systemPrompt,
                            int maxCompletionTokens, String reasoningEffort, int timeoutSeconds, int maxHistoryChars,
                            TokenPricing pricing, ContextCompression compression, ContextManagement contextManagement) {
         this(id, name, description, model, systemPrompt, maxCompletionTokens, reasoningEffort, timeoutSeconds,
-                maxHistoryChars, pricing, compression, contextManagement, MemoryLayers.disabled());
+                maxHistoryChars, pricing, compression, contextManagement, MemoryLayers.disabled(), InvariantSettings.disabled());
     }
     public AgentDefinition(String id, String name, String description, String model,
                            String systemPrompt, int maxCompletionTokens, String reasoningEffort,
@@ -45,11 +54,21 @@ public record AgentDefinition(String id, String name, String description, String
         if (compression == null) compression = ContextCompression.disabled();
         if (contextManagement == null) contextManagement = ContextManagement.defaults();
         if (memoryLayers == null) memoryLayers = MemoryLayers.disabled();
+        if (invariants == null) invariants = InvariantSettings.disabled();
     }
 
     public AgentDefinition withPrompt(String prompt, int limit) {
         return new AgentDefinition(id, name, description, model, prompt, limit, reasoningEffort,
-                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement, memoryLayers);
+                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement, memoryLayers, invariants);
+    }
+
+    public record InvariantSettings(boolean enabled, int maxCompletionTokens, String guardPrompt) {
+        public InvariantSettings {
+            if (maxCompletionTokens < 64 || maxCompletionTokens > 4096 || guardPrompt == null || guardPrompt.isBlank()) {
+                throw new IllegalArgumentException("Invalid invariant settings");
+            }
+        }
+        public static InvariantSettings disabled() { return new InvariantSettings(false, 600, "disabled"); }
     }
 
     public record MemoryLayers(boolean enabled, int recentMessages, int maxCompletionTokens, String systemPrompt,

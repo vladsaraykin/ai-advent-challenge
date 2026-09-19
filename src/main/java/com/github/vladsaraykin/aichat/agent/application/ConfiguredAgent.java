@@ -70,14 +70,93 @@ public final class ConfiguredAgent implements Agent {
             com.github.vladsaraykin.aichat.user.domain.UserProfile profile) {
         if (!definition.memoryLayers().enabled()) {
             var personalized = definition.withPrompt(definition.systemPrompt()
-                    + AgentContextBuilder.profilePrompt(profile), definition.maxCompletionTokens());
+                    + AgentContextBuilder.profilePrompt(profile)
+                    + AgentContextBuilder.invariantsPrompt(chat.invariants()), definition.maxCompletionTokens());
             return new ConfiguredAgent(personalized, model).answerStream(chat, user);
         }
         var configured = definition.withPrompt(definition.systemPrompt()
                 + AgentContextBuilder.profilePrompt(profile)
-                + AgentContextBuilder.memoryPrompt(chat.workingMemory(), entries), definition.maxCompletionTokens());
+                + AgentContextBuilder.memoryPrompt(chat.workingMemory(), entries)
+                + AgentContextBuilder.invariantsPrompt(chat.invariants()), definition.maxCompletionTokens());
         // In layered mode working memory replaces the untyped Sticky Facts extraction.
         return new ConfiguredAgent(configured, model).answerStream(chat.summary(), chat.messages(), user);
+    }
+
+    @Override public Mono<InvariantCheck> checkInvariants(
+            com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user, ChatMessage assistant) {
+        if (!definition.invariants().enabled() || chat.invariants().entries().isEmpty()) {
+            return Mono.just(InvariantCheck.allowed(null));
+        }
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        String source = assistant == null ? user.content() : assistant.content();
+        String target = assistant == null ? "REQUEST" : "ANSWER";
+        var rules = chat.invariants().entries().stream().map(entry -> java.util.Map.of(
+                "id", entry.id(), "type", entry.type(), "title", entry.title(),
+                "rule", entry.rule(), "rationale", entry.rationale())).toList();
+        String input = mapper.writeValueAsString(java.util.Map.of(
+                "target", target, "invariants", rules, "content", source));
+        if ((long) input.length() + definition.invariants().guardPrompt().length() > definition.maxHistoryChars()) {
+            return Mono.error(new ChatFailure(ChatFailure.Kind.INVALID,
+                    "Достигнут лимит контекста проверки инвариантов. Сократите правила или запрос."));
+        }
+        var guard = definition.withPrompt(definition.invariants().guardPrompt(),
+                definition.invariants().maxCompletionTokens());
+        var request = new ChatMessage(user.id(), ChatMessage.Role.USER, input, user.createdAt(), null);
+        return model.checkInvariants(guard, List.of(request)).filter(part -> part.completed() != null)
+                .map(ConversationModel.StreamPart::completed).single()
+                .map(reply -> parseInvariantCheck(mapper, chat, source, reply))
+                .onErrorMap(error -> !(error instanceof ChatFailure), error -> new ChatFailure(
+                        ChatFailure.Kind.PROVIDER,
+                        "Не удалось проверить инварианты. Ответ не был продолжен; повторите отправку."));
+    }
+
+    private InvariantCheck parseInvariantCheck(tools.jackson.databind.json.JsonMapper mapper,
+                                                com.github.vladsaraykin.aichat.agent.domain.Chat chat,
+                                                String source, ConversationModel.Reply reply) {
+        String validation = "completion";
+        try {
+            if (reply.metrics() == null || "length".equalsIgnoreCase(reply.metrics().finishReason())) {
+                throw new IllegalArgumentException();
+            }
+            validation = "json_syntax";
+            var root = mapper.readTree(memoryJson(reply.text()));
+            validation = "root_schema";
+            if (!root.isObject() || root.size() != 2 || !root.path("result").isString()
+                    || !root.path("conflicts").isArray() || root.path("conflicts").size() > 10) {
+                throw new IllegalArgumentException();
+            }
+            String result = root.path("result").asString();
+            if (!java.util.Set.of("ALLOW", "CONFLICT").contains(result)) throw new IllegalArgumentException();
+            var conflicts = new ArrayList<InvariantConflict>();
+            for (var value : root.path("conflicts")) {
+                validation = "conflict_schema";
+                if (!value.isObject() || value.size() != 3 || !value.path("invariantId").isString()
+                        || !value.path("evidence").isString() || !value.path("explanation").isString()) {
+                    throw new IllegalArgumentException();
+                }
+                UUID id = UUID.fromString(value.path("invariantId").asString());
+                if (chat.invariants().entries().stream().noneMatch(entry -> entry.id().equals(id))) {
+                    validation = "invariant_id"; throw new IllegalArgumentException();
+                }
+                String evidence = sourceQuote(source, value.path("evidence").asString());
+                String explanation = value.path("explanation").asString().strip();
+                if (explanation.isBlank() || explanation.length() > 500) {
+                    validation = "explanation"; throw new IllegalArgumentException();
+                }
+                conflicts.add(new InvariantConflict(id, evidence, explanation));
+            }
+            if ((result.equals("ALLOW") && !conflicts.isEmpty()) || (result.equals("CONFLICT") && conflicts.isEmpty())) {
+                validation = "result_consistency"; throw new IllegalArgumentException();
+            }
+            return new InvariantCheck(result.equals("ALLOW"), conflicts, reply.metrics());
+        } catch (RuntimeException error) {
+            log.warn("invariant_validation_failed agentId={} chatId={} requestId={} reason={} responseChars={}",
+                    definition.id(), chat.id(), reply.hashCode(), validation,
+                    reply.text() == null ? 0 : reply.text().length());
+            throw new ChatFailure(ChatFailure.Kind.PROVIDER,
+                    "Проверка инвариантов вернула некорректный результат (" + validation
+                            + "). Ответ заблокирован; повторите отправку.");
+        }
     }
 
     public record ProposalData(com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Scope scope,

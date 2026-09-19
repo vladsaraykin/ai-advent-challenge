@@ -25,6 +25,7 @@ class MemoryControllerTest {
                 .setControllerAdvice(new ChatExceptionHandler()).build();
         mvc.perform(get("/api/agents")).andExpect(jsonPath("$[0].memoryLayers").value(true))
                 .andExpect(jsonPath("$[0].memoryRecentMessages").value(10))
+                .andExpect(jsonPath("$[0].invariants").value(true))
                 .andExpect(jsonPath("$[0].systemPrompt").doesNotExist());
         mvc.perform(get("/api/agents/architect/memory")).andExpect(status().isOk()).andExpect(jsonPath("$.entries").isEmpty());
         mvc.perform(get("/api/agents/chef/memory")).andExpect(status().isBadRequest());
@@ -42,6 +43,19 @@ class MemoryControllerTest {
         mvc.perform(delete(path).contentType("application/json").content("{\"version\":1}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.entries").isEmpty());
         var chat = service.create("architect");
+        UUID invariant = UUID.randomUUID();
+        String invariantPath = "/api/agents/architect/chats/" + chat.id() + "/invariants/" + invariant;
+        mvc.perform(put(invariantPath).contentType("application/json").content("""
+                {"version":0,"type":"STACK_CONSTRAINT","title":"Основная БД",
+                 "rule":"Использовать PostgreSQL","rationale":"Решение команды"}
+                """)).andExpect(status().isOk()).andExpect(jsonPath("$.invariants.version").value(1))
+                .andExpect(jsonPath("$.invariants.entries[0].rule").value("Использовать PostgreSQL"));
+        mvc.perform(put(invariantPath).contentType("application/json").content("""
+                {"version":0,"type":"STACK_CONSTRAINT","title":"Основная БД",
+                 "rule":"Использовать MongoDB","rationale":""}
+                """)).andExpect(status().isConflict());
+        mvc.perform(delete(invariantPath).contentType("application/json").content("{\"version\":1}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.invariants.entries").isEmpty());
         String taskPath = "/api/agents/architect/chats/" + chat.id() + "/task";
         mvc.perform(put(taskPath).contentType("application/json").content("""
                 {"version":0,"projectKey":"project-a","task":{"goal":"Test","requirements":{},"constraints":{},"decisions":{},"openQuestions":[null]}}

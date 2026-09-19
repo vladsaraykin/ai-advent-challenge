@@ -28,6 +28,10 @@ public class MemoryController {
     public record EntryEdit(@PositiveOrZero long version, @NotNull WorkingMemory.Scope scope,
                             @NotNull @Size(max=80) String projectKey, @NotBlank @Size(max=80) String key,
                             @NotBlank @Size(max=500) String value) { }
+    public record InvariantEdit(@PositiveOrZero long version, @NotNull TaskInvariants.Type type,
+                                @NotBlank @Size(max=100) String title,
+                                @NotBlank @Size(max=1000) String rule,
+                                @NotNull @Size(max=500) String rationale) { }
     @GetMapping("/memory") public LongTermMemory memory(Principal principal, @PathVariable String agentId) { return service.memory(owner(principal), agentId); }
     @PutMapping("/memory/{id}") public LongTermMemory put(Principal principal, @PathVariable String agentId, @PathVariable UUID id,
             @Valid @RequestBody EntryEdit request) {
@@ -45,6 +49,18 @@ public class MemoryController {
             @Valid @RequestBody Version request) { return service.pauseTask(owner(principal), agentId, chatId, request.version()); }
     @PostMapping("/chats/{chatId}/task/resume") public Chat resume(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId,
             @Valid @RequestBody Version request) { return service.resumeTask(owner(principal), agentId, chatId, request.version()); }
+    @PutMapping("/chats/{chatId}/invariants/{id}") public Chat putInvariant(Principal principal,
+            @PathVariable String agentId, @PathVariable UUID chatId, @PathVariable UUID id,
+            @Valid @RequestBody InvariantEdit request) {
+        return service.putInvariant(owner(principal), agentId, chatId, request.version(),
+                new TaskInvariants.Entry(id, request.type(), request.title(), request.rule(),
+                        request.rationale(), java.time.Instant.now()));
+    }
+    @DeleteMapping("/chats/{chatId}/invariants/{id}") public Chat deleteInvariant(Principal principal,
+            @PathVariable String agentId, @PathVariable UUID chatId, @PathVariable UUID id,
+            @Valid @RequestBody Version request) {
+        return service.deleteInvariant(owner(principal), agentId, chatId, request.version(), id);
+    }
     @PostMapping("/chats/{chatId}/proposals/{id}/accept") public LongTermMemory accept(Principal principal, @PathVariable String agentId,
             @PathVariable UUID chatId, @PathVariable UUID id, @Valid @RequestBody Confirmation request) {
         return service.acceptProposal(owner(principal), agentId, chatId, request.version(), request.taskVersion(), id);

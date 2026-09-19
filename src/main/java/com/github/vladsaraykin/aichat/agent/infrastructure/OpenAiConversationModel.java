@@ -108,6 +108,10 @@ public class OpenAiConversationModel implements ConversationModel {
         return streamCall(definition, null, messages, memoryPrompt(definition, messages),
                 definition.systemPrompt(), "llm_questions");
     }
+    @Override public Flux<StreamPart> checkInvariants(AgentDefinition definition, List<ChatMessage> messages) {
+        return streamCall(definition, null, messages, memoryPrompt(definition, messages),
+                definition.systemPrompt(), "llm_invariant_guard");
+    }
 
     @Override public Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
                                            List<ChatMessage> messages) {
