@@ -52,6 +52,8 @@
 .agent-inspector .context-memory { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: white; }
 .task-state-card { margin: 10px 0; padding: 12px; border: 1px solid #c9d9e6; border-radius: 10px; background: #eef5fb; }
 .task-state-card p { margin: 4px 0; }
+.task-actions [role="alert"] { margin: 8px 0; padding: 10px 12px; border: 1px solid #e4b4a6; border-radius: 8px; background: #fff3ef; color: #993e27; }
+.task-actions [role="status"] { margin: 8px 0; padding: 10px 12px; border-radius: 8px; background: #eef5fb; color: #234652; }
 .memory-layers h2 { font-size: 1.1rem; margin: 0 0 8px; }
 .memory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .memory-layers h3 { font-size: .92rem; margin: 14px 0 6px; }

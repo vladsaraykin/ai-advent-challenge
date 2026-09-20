@@ -89,17 +89,27 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
           <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : <p>Пока нет</p>}</div>)}
       <h3>Открытые вопросы</h3>
       {working?.openQuestions?.length ? <ul>{working.openQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul> : <p>Нет сохранённых вопросов</p>}
-      <button type="button" disabled={blocked || readOnly} onClick={editTask}>Изменить данные задачи</button>
-      {actions[working?.stage || 'REQUIREMENTS'] && <button type="button" disabled={blocked || readOnly || working?.status === 'PAUSED'}
-        onClick={() => run(async () => onChat(await api.advanceTask(agent.id, chat.id, working?.version || 0)))}>
-        {actions[working?.stage || 'REQUIREMENTS']}</button>}
-      {working?.status === 'PAUSED'
-        ? <button type="button" disabled={blocked || readOnly}
-          onClick={() => run(async () => onChat(await api.resumeTask(agent.id, chat.id, working?.version || 0)))}>Продолжить задачу</button>
-        : <button type="button" disabled={blocked || readOnly}
-          onClick={() => run(async () => onChat(await api.pauseTask(agent.id, chat.id, working?.version || 0)))}>Поставить на паузу</button>}
+      <div className="task-actions" role="group" aria-label="Управление состоянием задачи">
+        <button type="button" disabled={blocked || readOnly} onClick={editTask}>Изменить данные задачи</button>
+        {actions[working?.stage || 'REQUIREMENTS'] && <button type="button" disabled={blocked || readOnly || working?.status === 'PAUSED'}
+          onClick={() => run(async () => onChat(await api.advanceTask(agent.id, chat.id, working?.version || 0)))}>
+          {actions[working?.stage || 'REQUIREMENTS']}</button>}
+        {working?.status === 'PAUSED'
+          ? <button type="button" disabled={blocked || readOnly}
+            onClick={() => run(async () => onChat(await api.resumeTask(agent.id, chat.id, working?.version || 0)))}>Продолжить задачу</button>
+          : <button type="button" disabled={blocked || readOnly}
+            onClick={() => run(async () => onChat(await api.pauseTask(agent.id, chat.id, working?.version || 0)))}>Поставить на паузу</button>}
+        {busy && <p role="status">Сохраняем память…</p>}
+        {notice && <p role="status">{notice}</p>}
+        {error && <div role="alert">{error}</div>}
+      </div>
       {!chat && <p>Сначала отправьте сообщение, чтобы создать задачу.</p>}
       <p>Переходы выполняет приложение. LLM обновляет данные, но не может изменить этап. После паузы вся история и память сохраняются.</p>
+      {agent.lifecycle && <p>Контроль этапов включён: запрос и черновик ответа проверяются до показа.
+        Реализация доступна только после подтверждения требований, а завершение — после Validation.</p>}
+      {!!chat?.lifecycle?.usage?.calls && <p>Проверка жизненного цикла: {chat.lifecycle.usage.calls} выз. ·
+        вход {formatTokens(chat.lifecycle.usage.promptTokens)} · выход {formatTokens(chat.lifecycle.usage.completionTokens)} ·
+        {' '}{formatUsd(chat.lifecycle.usage.totalCostUsd)}.</p>}
       {taskEdit && <form onSubmit={e => { e.preventDefault(); run(async () => {
         const task = { goal: taskEdit.goal, openQuestions: taskEdit.openQuestions.split('\n').map(q => q.trim()).filter(Boolean) }
         for (const field of Object.keys(taskFields)) task[field] = JSON.parse(taskEdit[field])
@@ -163,9 +173,6 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
             onChat(await api.rejectProposal(agent.id, chat.id, p.id, working.version)))}>Отклонить «{p.key}»</button></div>
       </article>)}
     </details>
-    {busy && <p role="status">Сохраняем память…</p>}
-    {notice && <p role="status">{notice}</p>}
-    {error && <div role="alert">{error}</div>}
     <button type="button" disabled={busy || disabled} onClick={reloadMemory}>Обновить память</button>
     </div>
   </section>

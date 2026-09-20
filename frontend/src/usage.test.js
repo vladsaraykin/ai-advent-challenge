@@ -24,4 +24,13 @@ describe('chat usage totals', () => {
       completionTokens: 300, totalTokens: 1400 })
     expect(usage.totalCostUsd).toBeCloseTo(0.0013, 10)
   })
+
+  it('includes lifecycle guard calls without mixing them into response messages', () => {
+    const usage = summarizeUsage([], null, null, null, null, {
+      usage: { calls: 2, pricedCalls: 2, promptTokens: 40, completionTokens: 10,
+        totalTokens: 50, totalCostUsd: 0.0002 }
+    })
+    expect(usage).toMatchObject({ calls: 2, pricedCalls: 2, promptTokens: 40,
+      completionTokens: 10, totalTokens: 50, totalCostUsd: 0.0002 })
+  })
 })

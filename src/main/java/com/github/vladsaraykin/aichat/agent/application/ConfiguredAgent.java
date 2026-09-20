@@ -110,6 +110,81 @@ public final class ConfiguredAgent implements Agent {
                         "Не удалось проверить инварианты. Ответ не был продолжен; повторите отправку."));
     }
 
+    @Override public Mono<LifecycleCheck> checkLifecycle(
+            com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user, ChatMessage assistant) {
+        if (!definition.lifecycle().enabled()) return Mono.just(LifecycleCheck.allowed(null));
+        String source = assistant == null ? user.content() : assistant.content();
+        if (chat.workingMemory().status()
+                == com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Status.PAUSED) {
+            return Mono.just(LifecycleCheck.blocked("TASK_PAUSED", source,
+                    "Задача находится на паузе и сначала должна быть продолжена в панели состояния.", null));
+        }
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        String input = mapper.writeValueAsString(java.util.Map.of(
+                "target", assistant == null ? "REQUEST" : "ANSWER",
+                "taskState", AgentContextBuilder.task(chat.workingMemory()), "content", source));
+        if ((long) input.length() + definition.lifecycle().guardPrompt().length() > definition.maxHistoryChars()) {
+            return Mono.error(new ChatFailure(ChatFailure.Kind.INVALID,
+                    "Достигнут лимит проверки жизненного цикла задачи. Сократите запрос."));
+        }
+        var guard = definition.withPrompt(definition.lifecycle().guardPrompt(),
+                definition.lifecycle().maxCompletionTokens());
+        var request = new ChatMessage(user.id(), ChatMessage.Role.USER, input, user.createdAt(), null);
+        return model.checkLifecycle(guard, List.of(request)).filter(part -> part.completed() != null)
+                .map(ConversationModel.StreamPart::completed).single()
+                .map(reply -> parseLifecycleCheck(mapper, chat, source, reply))
+                .onErrorMap(error -> !(error instanceof ChatFailure), error -> new ChatFailure(
+                        ChatFailure.Kind.PROVIDER,
+                        "Не удалось проверить этап задачи. Ответ заблокирован; повторите отправку."));
+    }
+
+    private LifecycleCheck parseLifecycleCheck(tools.jackson.databind.json.JsonMapper mapper,
+                                                com.github.vladsaraykin.aichat.agent.domain.Chat chat,
+                                                String source, ConversationModel.Reply reply) {
+        String validation = "completion";
+        try {
+            if (reply.metrics() == null || "length".equalsIgnoreCase(reply.metrics().finishReason())) {
+                throw new IllegalArgumentException();
+            }
+            validation = "json_syntax";
+            var root = mapper.readTree(memoryJson(reply.text()));
+            validation = "root_schema";
+            if (!root.isObject() || root.size() != 2 || !root.path("result").isString()
+                    || (!root.path("violation").isObject() && !root.path("violation").isNull())) {
+                throw new IllegalArgumentException();
+            }
+            String result = root.path("result").asString();
+            if (!java.util.Set.of("ALLOW", "BLOCK").contains(result)) throw new IllegalArgumentException();
+            if (result.equals("ALLOW")) {
+                if (!root.path("violation").isNull()) throw new IllegalArgumentException();
+                return LifecycleCheck.allowed(reply.metrics());
+            }
+            var value = root.path("violation");
+            validation = "violation_schema";
+            if (!value.isObject() || value.size() != 3 || !value.path("code").isString()
+                    || !value.path("evidence").isString() || !value.path("explanation").isString()) {
+                throw new IllegalArgumentException();
+            }
+            String code = value.path("code").asString();
+            if (!java.util.Set.of("PREMATURE_EXECUTION", "PREMATURE_COMPLETION", "TASK_ALREADY_DONE")
+                    .contains(code)) throw new IllegalArgumentException();
+            validation = "evidence";
+            String evidence = sourceQuote(source, value.path("evidence").asString());
+            String explanation = value.path("explanation").asString().strip();
+            if (explanation.isBlank() || explanation.length() > 500) {
+                validation = "explanation"; throw new IllegalArgumentException();
+            }
+            return LifecycleCheck.blocked(code, evidence, explanation, reply.metrics());
+        } catch (RuntimeException error) {
+            log.warn("lifecycle_validation_failed agentId={} chatId={} stage={} reason={} responseChars={}",
+                    definition.id(), chat.id(), chat.workingMemory().stage(), validation,
+                    reply.text() == null ? 0 : reply.text().length());
+            throw new ChatFailure(ChatFailure.Kind.PROVIDER,
+                    "Проверка этапа задачи вернула некорректный результат (" + validation
+                            + "). Ответ заблокирован; повторите отправку.");
+        }
+    }
+
     private InvariantCheck parseInvariantCheck(tools.jackson.databind.json.JsonMapper mapper,
                                                 com.github.vladsaraykin.aichat.agent.domain.Chat chat,
                                                 String source, ConversationModel.Reply reply) {

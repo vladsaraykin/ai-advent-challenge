@@ -45,6 +45,10 @@ public interface Agent {
             ChatMessage user, ChatMessage assistant) {
         return Mono.just(InvariantCheck.allowed(null));
     }
+    default Mono<LifecycleCheck> checkLifecycle(com.github.vladsaraykin.aichat.agent.domain.Chat chat,
+            ChatMessage user, ChatMessage assistant) {
+        return Mono.just(LifecycleCheck.allowed(null));
+    }
     default Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user) {
         return answerStream(chat.summary(), chat.messages(), user);
     }
@@ -58,6 +62,19 @@ public interface Agent {
         public InvariantCheck { conflicts = conflicts == null ? List.of() : List.copyOf(conflicts); }
         public static InvariantCheck allowed(ChatMessage.Metrics metrics) {
             return new InvariantCheck(true, List.of(), metrics);
+        }
+    }
+    record LifecycleViolation(String code, String evidence, String explanation) { }
+    record LifecycleCheck(boolean allowed, LifecycleViolation violation, ChatMessage.Metrics metrics) {
+        public LifecycleCheck {
+            if (allowed == (violation != null)) throw new IllegalArgumentException("Invalid lifecycle check");
+        }
+        public static LifecycleCheck allowed(ChatMessage.Metrics metrics) {
+            return new LifecycleCheck(true, null, metrics);
+        }
+        public static LifecycleCheck blocked(String code, String evidence, String explanation,
+                                             ChatMessage.Metrics metrics) {
+            return new LifecycleCheck(false, new LifecycleViolation(code, evidence, explanation), metrics);
         }
     }
 }

@@ -96,6 +96,10 @@ class MemoryLayersTest {
             public reactor.core.publisher.Flux<StreamPart> extractQuestions(AgentDefinition d, List<ChatMessage> messages) {
                 return reactor.core.publisher.Flux.just(StreamPart.completed(MemoryLayersTest.reply(questions)));
             }
+            public reactor.core.publisher.Flux<StreamPart> checkLifecycle(AgentDefinition d, List<ChatMessage> messages) {
+                return reactor.core.publisher.Flux.just(StreamPart.completed(MemoryLayersTest.reply(
+                        "{\"result\":\"ALLOW\",\"violation\":null}")));
+            }
             public Mono<Reply> summarize(AgentDefinition d, ContextSummary previous, List<ChatMessage> messages) {
                 return model.summarize(d, previous, messages);
             }
@@ -290,7 +294,9 @@ class MemoryLayersTest {
         assertThatThrownBy(() -> service.send("architect", chat.id(), request, "Запрос")).hasMessageContaining("JSON");
         assertThat(service.get("architect", chat.id())).isEqualTo(chat);
         incomplete.set(false); cancelAnswer.set(true);
-        service.stream("architect", chat.id(), request, "Запрос").takeUntil(e -> e.type() == ChatService.StreamEvent.Type.DELTA).collectList().block();
+        var cancelled = service.stream("architect", chat.id(), request, "Запрос").take(4).collectList().block();
+        assertThat(cancelled).extracting(ChatService.StreamEvent::type)
+                .doesNotContain(ChatService.StreamEvent.Type.DELTA);
         assertThat(service.get("architect", chat.id())).isEqualTo(chat);
         cancelAnswer.set(false);
         assertThat(service.send("architect", chat.id(), request, "Запрос").messages()).hasSize(2);

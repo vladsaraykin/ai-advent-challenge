@@ -35,6 +35,9 @@ public interface ConversationModel {
     default Flux<StreamPart> checkInvariants(AgentDefinition definition, List<ChatMessage> messages) {
         return stream(definition, messages);
     }
+    default Flux<StreamPart> checkLifecycle(AgentDefinition definition, List<ChatMessage> messages) {
+        return stream(definition, messages);
+    }
 
     record Reply(String text, ChatMessage.Metrics metrics) { }
     record StreamPart(String delta, Reply completed) {

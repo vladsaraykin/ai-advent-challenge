@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import MemoryLayers from './MemoryLayers'
@@ -56,6 +56,22 @@ describe('explicit memory layers', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Обновить память' }))
     await waitFor(() => expect(api.chat).toHaveBeenCalledWith('architect', 'chat'))
   })
+  it('shows a rejected validation transition next to the task controls and stays in execution', async () => {
+    const api = makeApi()
+    const designing = { ...chat, workingMemory: { ...chat.workingMemory, version: 3, stage: 'DESIGN',
+      decisions: {}, currentStep: 'Подготовить архитектурные решения', expectedAction: 'RECORD_DECISIONS' } }
+    api.advanceTask.mockRejectedValue(new Error('Сначала зафиксируйте архитектурные решения.'))
+    render(<Harness api={api} initial={designing} />)
+    await screen.findByText('Пока ничего не сохранено.')
+
+    const controls = screen.getByRole('group', { name: 'Управление состоянием задачи' })
+    await userEvent.click(within(controls).getByRole('button', { name: 'Передать на проверку' }))
+
+    expect(await within(controls).findByRole('alert')).toHaveTextContent('Сначала зафиксируйте архитектурные решения.')
+    expect(api.advanceTask).toHaveBeenCalledWith('architect', 'chat', 3)
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Execution · проектирование')
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Подготовить архитектурные решения')
+  })
   it('pauses and resumes the formal task state without changing its stage', async () => {
     const api = makeApi()
     const paused = { ...chat, workingMemory: { ...chat.workingMemory, version: 2, status: 'PAUSED',
@@ -73,6 +89,23 @@ describe('explicit memory layers', () => {
     await waitFor(() => expect(api.resumeTask).toHaveBeenCalledWith('architect', 'chat', 2))
     expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Активна')
     expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Согласовать план задачи')
+  })
+  it('finishes validation and renders the returned done state', async () => {
+    const api = makeApi()
+    const reviewing = { ...chat, workingMemory: { ...chat.workingMemory, version: 7, stage: 'REVIEW',
+      goal: 'Подготовить план без начала разработки на текущем этапе',
+      constraints: { implementation_scope: 'Реализацию на текущем этапе не начинать' },
+      decisions: { architecture: 'Модульный монолит' }, currentStep: 'Проверить решение и закрыть замечания',
+      expectedAction: 'VALIDATE_RESULT' } }
+    const done = { ...reviewing, workingMemory: { ...reviewing.workingMemory, version: 8, stage: 'DONE',
+      goal: 'Подготовить план', constraints: {}, currentStep: 'Задача завершена', expectedAction: 'NONE' } }
+    api.advanceTask.mockResolvedValue(done)
+    render(<Harness api={api} initial={reviewing} />)
+    await screen.findByText('Пока ничего не сохранено.')
+    await userEvent.click(screen.getByRole('button', { name: 'Подтвердить завершение' }))
+    await waitFor(() => expect(api.advanceTask).toHaveBeenCalledWith('architect', 'chat', 7))
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Done · завершено')
+    expect(screen.queryByRole('button', { name: 'Подтвердить завершение' })).not.toBeInTheDocument()
   })
   it('requires deletion confirmation and does not resurrect accepted proposals', async () => {
     const api = makeApi()

@@ -14,11 +14,16 @@ class AgentRegistryTest {
         assertThat(registry.get("architect").definition().memoryLayers().maxCompletionTokens()).isEqualTo(8192);
         assertThat(registry.get("architect").definition().memoryLayers().questionsMaxTokens()).isEqualTo(4096);
         assertThat(registry.get("architect").definition().memoryLayers().questionsPrompt()).contains("questions");
+        assertThat(registry.get("architect").definition().memoryLayers().systemPrompt())
+                .contains("Временные команды процесса", "implementation_scope");
         assertThat(registry.get("architect").definition().invariants().enabled()).isTrue();
         assertThat(registry.get("architect").definition().invariants().guardPrompt()).contains("CONFLICT");
+        assertThat(registry.get("architect").definition().lifecycle().enabled()).isTrue();
+        assertThat(registry.get("architect").definition().lifecycle().guardPrompt()).contains("PREMATURE_EXECUTION");
         assertThat(registry.get("architect").definition().pricing()).isEqualTo(registry.get("techno").definition().pricing());
         assertThat(registry.get("chef").definition().memoryLayers().enabled()).isFalse();
         assertThat(registry.get("chef").definition().invariants().enabled()).isFalse();
+        assertThat(registry.get("chef").definition().lifecycle().enabled()).isFalse();
         assertThatThrownBy(() -> new com.github.vladsaraykin.aichat.agent.domain.AgentDefinition.MemoryLayers(true, 3, 3000, "prompt"))
                 .hasMessageContaining("memory layer");
         Files.writeString(directory.resolve("custom.yaml"), CONFIG + "memory-layers:\n  enabled: true\n");

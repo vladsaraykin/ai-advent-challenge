@@ -57,4 +57,34 @@ class TaskStateMachineTest {
         assertThat(changed.status()).isEqualTo(WorkingMemory.Status.PAUSED);
         assertThat(changed.expectedAction()).isEqualTo(WorkingMemory.ExpectedAction.RESUME_TASK);
     }
+
+    @Test void temporaryWorkflowInstructionsAreNotDurableAndDoNotRollReviewBackToPlanning() {
+        var polluted = new WorkingMemory(14, WorkingMemory.Stage.REVIEW, "notifications",
+                "Спроектировать сервис и подготовить план без начала разработки на текущем этапе.",
+                Map.of("channel", "email", "current_deliverable", "Подготовить план реализации"),
+                Map.of("implementation_scope", "Реализацию на текущем этапе не начинать",
+                        "stack", "Использовать Java 21"),
+                Map.of("architecture", "Модульный монолит"), List.of(), List.of(), null, null,
+                WorkingMemory.Status.ACTIVE, null, null);
+
+        var cleaned = MemoryService.update(polluted, new MemoryService.TaskData(
+                "Спроектировать сервис и подготовить план без начала разработки на текущем этапе.",
+                polluted.requirements(), polluted.constraints(), polluted.decisions(), List.of()),
+                polluted.projectKey(), List.of(), null);
+
+        assertThat(cleaned.stage()).isEqualTo(WorkingMemory.Stage.REVIEW);
+        assertThat(cleaned.goal()).isEqualTo("Спроектировать сервис и подготовить план");
+        assertThat(cleaned.requirements()).containsOnly(entry("channel", "email"));
+        assertThat(cleaned.constraints()).containsOnly(entry("stack", "Использовать Java 21"));
+
+        var done = MemoryService.advance(cleaned);
+        assertThat(done.stage()).isEqualTo(WorkingMemory.Stage.DONE);
+        assertThat(done.constraints()).doesNotContainKey("implementation_scope");
+    }
+
+    @Test void recognizesEnglishStageScopedImplementationCommands() {
+        assertThat(MemoryService.isTemporaryWorkflow("Do not implement at this stage")).isTrue();
+        assertThat(MemoryService.isTemporaryWorkflow("Deploy only after the plan is approved")).isTrue();
+        assertThat(MemoryService.isTemporaryWorkflow("Use PostgreSQL for durable storage")).isFalse();
+    }
 }

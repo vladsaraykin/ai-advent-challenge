@@ -179,7 +179,9 @@ export default function App({ api = agentApi }) {
         updating_facts: () => setStreamPhase('updating_facts'),
         summarizing: () => setStreamPhase('summarizing'),
         checking_invariants: () => setStreamPhase('checking_invariants'),
+        checking_lifecycle: () => setStreamPhase('checking_lifecycle'),
         generating: () => setStreamPhase('generating'),
+        validating_lifecycle: () => setStreamPhase('validating_lifecycle'),
         validating_answer: () => setStreamPhase('validating_answer'),
         delta: part => { setStreamPhase('streaming'); setStreamedAnswer(value => value + (part.text || '')) },
         completed: event => { completed = event.chat; if (event.warning) setNotice(event.warning) }
@@ -218,7 +220,7 @@ export default function App({ api = agentApi }) {
       {!loading && !chat && <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
         disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />}
       {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory}
-        workingMemory={chat?.workingMemory} invariants={chat?.invariants} />}
+        workingMemory={chat?.workingMemory} invariants={chat?.invariants} lifecycle={chat?.lifecycle} />}
       {loading ? <div className="loading-state" role="status">Загружаем чаты…</div>
         : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} draft={draft}
           streamedAnswer={streamedAnswer} streamPhase={streamPhase} />}

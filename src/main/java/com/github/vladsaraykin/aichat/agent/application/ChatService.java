@@ -272,26 +272,47 @@ public class ChatService {
                             prepared.chat().workingMemory().withoutResolved(durable.resolvedProposals())), user, entries)
                     .map(memory -> new Prepared(prepared.chat().withWorkingMemory(memory), prepared.warning(), prepared.memoryFailed())));
             final Mono<Prepared> finalPreparation = preparation;
-            boolean guardActive = agent.definition().invariants().enabled() && !chat.invariants().entries().isEmpty();
+            boolean lifecycleActive = agent.definition().lifecycle().enabled() && layered;
+            boolean invariantActive = agent.definition().invariants().enabled() && !chat.invariants().entries().isEmpty();
+            boolean guardActive = lifecycleActive || invariantActive;
             Flux<StreamEvent> guarded;
             if (!guardActive) {
                 guarded = phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
                         finalPreparation.flatMapMany(prepared -> streamingAnswer(ownerId, agentId, messageId, agent,
                                 strategy, prepared, user, entries, profile, layered)));
             } else {
-                Mono<Agent.InvariantCheck> requestGuard = Mono.defer(() -> agent.checkInvariants(chat, user, null));
-                guarded = requestGuard.flatMapMany(check -> {
-                    if (!check.allowed()) return rejected(ownerId, agentId, chat, user, check, List.of());
-                    Chat checked = chat.withInvariants(chat.invariants().recordUsage(usage(check.metrics())));
-                    Mono<Prepared> checkedPreparation = finalPreparation.map(value -> new Prepared(
-                            value.chat().withInvariants(checked.invariants()), value.warning(), value.memoryFailed()));
-                    return phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
-                            checkedPreparation.flatMapMany(prepared -> validatedAnswer(ownerId, agentId, messageId,
-                                    agent, strategy, chat, prepared, user, entries, profile, layered)));
-                });
+                Mono<Agent.LifecycleCheck> lifecycleGuard = lifecycleActive
+                        ? Mono.defer(() -> agent.checkLifecycle(chat, user, null))
+                        : Mono.just(Agent.LifecycleCheck.allowed(null));
+                guarded = phase(lifecycleActive ? "CHECKING_LIFECYCLE" : null,
+                        lifecycleGuard.flatMapMany(lifecycleCheck -> {
+                    if (!lifecycleCheck.allowed()) {
+                        return rejectedLifecycle(ownerId, agentId, chat, user, lifecycleCheck, List.of());
+                    }
+                    Chat lifecycleChecked = chat.withLifecycle(chat.lifecycle()
+                            .recordUsage(usage(lifecycleCheck.metrics())));
+                    Mono<Agent.InvariantCheck> invariantGuard = invariantActive
+                            ? Mono.defer(() -> agent.checkInvariants(lifecycleChecked, user, null))
+                            : Mono.just(Agent.InvariantCheck.allowed(null));
+                    return phase(invariantActive ? "CHECKING_INVARIANTS" : null,
+                            invariantGuard.flatMapMany(invariantCheck -> {
+                        if (!invariantCheck.allowed()) {
+                            return rejected(ownerId, agentId, lifecycleChecked, user, invariantCheck, List.of());
+                        }
+                        Chat checked = lifecycleChecked.withInvariants(lifecycleChecked.invariants()
+                                .recordUsage(usage(invariantCheck.metrics())));
+                        Mono<Prepared> checkedPreparation = finalPreparation.map(value -> new Prepared(
+                                value.chat().withLifecycle(checked.lifecycle()).withInvariants(checked.invariants()),
+                                value.warning(), value.memoryFailed()));
+                        return phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
+                                checkedPreparation.flatMapMany(prepared -> validatedAnswer(ownerId, agentId,
+                                        messageId, agent, strategy, chat, prepared, user, entries, profile,
+                                        layered, lifecycleActive, invariantActive)));
+                    }));
+                }));
             }
             return Flux.concat(Flux.just(StreamEvent.started(messageId)),
-                            phase(guardActive ? "CHECKING_INVARIANTS" : null, guarded))
+                            guarded)
                     .doOnError(error -> log.warn("agent_stream_failed agentId={} chatId={} requestId={} errorType={}",
                             agentId, chatId, messageId, error.getClass().getSimpleName()))
                     .doFinally(signal -> release(ownerId, chatId));
@@ -312,19 +333,35 @@ public class ChatService {
     }
     private Flux<StreamEvent> validatedAnswer(String ownerId, String agentId, UUID messageId, Agent agent,
             ContextStrategy strategy, Chat original, Prepared prepared, ChatMessage user,
-            List<LongTermMemory.Entry> entries, UserProfile profile, boolean layered) {
+            List<LongTermMemory.Entry> entries, UserProfile profile, boolean layered,
+            boolean lifecycleActive, boolean invariantActive) {
         Mono<Generated> generated = agent.answerStream(strategy.context(agent, prepared.chat()), user, entries, profile)
                 .collectList().map(Generated::from);
-        Flux<StreamEvent> result = generated.flatMapMany(answer -> Flux.concat(
-                Flux.just(StreamEvent.phase(StreamEvent.Type.VALIDATING_ANSWER)),
-                agent.checkInvariants(prepared.chat(), user, answer.completed()).flatMapMany(check -> {
-                    if (!check.allowed()) {
-                        Chat base = prepared.chat().withWorkingMemory(original.workingMemory()).withInvariants(
-                                prepared.chat().invariants().recordUsage(usage(answer.completed().metrics())));
-                        return rejected(ownerId, agentId, base, user, check, List.of());
+        Flux<StreamEvent> result = generated.flatMapMany(answer -> {
+            Mono<Agent.LifecycleCheck> lifecycleGuard = lifecycleActive
+                    ? agent.checkLifecycle(prepared.chat(), user, answer.completed())
+                    : Mono.just(Agent.LifecycleCheck.allowed(null));
+            return phase(lifecycleActive ? "VALIDATING_LIFECYCLE" : null,
+                    lifecycleGuard.flatMapMany(lifecycleCheck -> {
+                if (!lifecycleCheck.allowed()) {
+                    Chat base = prepared.chat().withWorkingMemory(original.workingMemory()).withLifecycle(
+                            prepared.chat().lifecycle().recordUsage(usage(answer.completed().metrics())));
+                    return rejectedLifecycle(ownerId, agentId, base, user, lifecycleCheck, List.of());
+                }
+                Chat lifecycleChecked = prepared.chat().withLifecycle(prepared.chat().lifecycle()
+                        .recordUsage(usage(lifecycleCheck.metrics())));
+                Mono<Agent.InvariantCheck> invariantGuard = invariantActive
+                        ? agent.checkInvariants(lifecycleChecked, user, answer.completed())
+                        : Mono.just(Agent.InvariantCheck.allowed(null));
+                return phase(invariantActive ? "VALIDATING_ANSWER" : null,
+                        invariantGuard.flatMapMany(invariantCheck -> {
+                    if (!invariantCheck.allowed()) {
+                        Chat base = lifecycleChecked.withWorkingMemory(original.workingMemory()).withInvariants(
+                                lifecycleChecked.invariants().recordUsage(usage(answer.completed().metrics())));
+                        return rejected(ownerId, agentId, base, user, invariantCheck, List.of());
                     }
-                    Chat withUsage = prepared.chat().withInvariants(prepared.chat().invariants()
-                            .recordUsage(usage(check.metrics())));
+                    Chat withUsage = lifecycleChecked.withInvariants(lifecycleChecked.invariants()
+                            .recordUsage(usage(invariantCheck.metrics())));
                     Mono<Chat> appended = Mono.defer(() -> agent.completeMemory(withUsage, user, answer.completed()))
                             .map(memory -> withUsage.withWorkingMemory(memory).append(user, answer.completed()));
                     Flux<StreamEvent> completion = appended.flatMapMany(value -> finalizeTurn(ownerId, agentId,
@@ -332,7 +369,9 @@ public class ChatService {
                     Flux<StreamEvent> replay = Flux.fromIterable(answer.deltas()).map(StreamEvent::delta);
                     return Flux.concat(replay, phase(layered && !prepared.chat().workingMemory().goal().isBlank()
                             ? "SYNCING_QUESTIONS" : null, completion));
-                })));
+                }));
+            }));
+        });
         return Flux.concat(Flux.just(StreamEvent.phase(StreamEvent.Type.GENERATING)), result);
     }
     private Flux<StreamEvent> finalizeTurn(String ownerId, String agentId, UUID messageId, Agent agent,
@@ -362,6 +401,47 @@ public class ChatService {
         log.info("agent_invariant_rejected agentId={} chatId={} requestId={} conflicts={}",
                 agentId, chat.id(), user.id(), check.conflicts().size());
         return Flux.just(StreamEvent.delta(text), StreamEvent.completed(saved, "Ответ ограничен подтверждёнными инвариантами задачи."));
+    }
+    private Flux<StreamEvent> rejectedLifecycle(String ownerId, String agentId, Chat chat, ChatMessage user,
+                                                Agent.LifecycleCheck check,
+                                                List<ChatMessage.Metrics> archived) {
+        Chat base = chat.withLifecycle(chat.lifecycle().recordUsage(archived));
+        String text = lifecycleRefusal(base, check);
+        var assistant = new ChatMessage(UUID.randomUUID(), ChatMessage.Role.ASSISTANT, text, Instant.now(), check.metrics());
+        Chat saved = base.append(user, assistant);
+        repository.save(ownerId, saved);
+        log.info("agent_lifecycle_rejected agentId={} chatId={} requestId={} stage={} code={}",
+                agentId, chat.id(), user.id(), chat.workingMemory().stage(), check.violation().code());
+        return Flux.just(StreamEvent.delta(text), StreamEvent.completed(saved,
+                "Действие заблокировано правилами жизненного цикла задачи."));
+    }
+    private static String lifecycleRefusal(Chat chat, Agent.LifecycleCheck check) {
+        WorkingMemory memory = chat.workingMemory();
+        String stage = switch (memory.stage()) {
+            case REQUIREMENTS -> "Planning · сбор требований";
+            case DESIGN -> "Execution · проектирование и реализация";
+            case REVIEW -> "Validation · проверка";
+            case DONE -> "Done · завершено";
+        };
+        return "Не могу выполнить это действие на текущем этапе задачи.\n\n"
+                + "- **Текущий этап:** " + stage + "\n"
+                + "- **Текущий шаг:** " + memory.currentStep() + "\n"
+                + "- **Почему:** " + check.violation().explanation() + "\n\n"
+                + "Сначала выполните ожидаемое действие в панели состояния: **"
+                + expectedAction(memory.expectedAction()) + "**.";
+    }
+    private static String expectedAction(WorkingMemory.ExpectedAction action) {
+        return switch (action) {
+            case DEFINE_GOAL -> "опишите цель задачи";
+            case PROVIDE_REQUIREMENTS -> "добавьте требования";
+            case ANSWER_OPEN_QUESTIONS -> "закройте открытые вопросы";
+            case CONFIRM_REQUIREMENTS -> "подтвердите требования";
+            case RECORD_DECISIONS -> "зафиксируйте архитектурные решения";
+            case CONFIRM_DESIGN -> "передайте решение на проверку";
+            case VALIDATE_RESULT -> "проверьте результат и подтвердите завершение";
+            case RESUME_TASK -> "продолжите задачу";
+            case NONE -> "создайте новую задачу или измените требования";
+        };
     }
     private static String refusal(Chat chat, Agent.InvariantCheck check) {
         var text = new StringBuilder("Не могу выполнить запрос в таком виде: он нарушает подтверждённые инварианты задачи.\n");
@@ -410,7 +490,8 @@ public class ChatService {
         }
     }
     public record StreamEvent(Type type, UUID messageId, String text, Chat chat, String warning) {
-        public enum Type { STARTED, CHECKING_INVARIANTS, GENERATING, VALIDATING_ANSWER,
+        public enum Type { STARTED, CHECKING_LIFECYCLE, CHECKING_INVARIANTS, GENERATING,
+            VALIDATING_LIFECYCLE, VALIDATING_ANSWER,
             SUMMARIZING, UPDATING_FACTS, UPDATING_MEMORY, SYNCING_QUESTIONS, DELTA, COMPLETED }
         static StreamEvent started(UUID id) { return new StreamEvent(Type.STARTED, id, null, null, null); }
         static StreamEvent phase(Type type) { return new StreamEvent(type, null, null, null, null); }

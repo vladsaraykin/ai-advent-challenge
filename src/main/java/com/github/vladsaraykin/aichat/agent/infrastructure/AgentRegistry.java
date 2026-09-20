@@ -35,7 +35,7 @@ public class AgentRegistry implements AgentCatalog {
                     new TokenPricing(requiredDecimal(properties, "pricing.input-per-million-usd"),
                             requiredDecimal(properties, "pricing.cached-input-per-million-usd"),
                             requiredDecimal(properties, "pricing.output-per-million-usd")),
-                    compression(properties), management(properties), layers(properties), invariants(properties));
+                    compression(properties), management(properties), layers(properties), invariants(properties), lifecycle(properties));
             if (loaded.putIfAbsent(definition.id(), new ConfiguredAgent(definition, model)) != null) {
                 throw new IllegalArgumentException("Duplicate agent id: " + definition.id());
             }
@@ -93,5 +93,11 @@ public class AgentRegistry implements AgentCatalog {
         return new AgentDefinition.InvariantSettings(enabled,
                 Integer.parseInt(p.getProperty("invariants.max-completion-tokens", "600")),
                 p.getProperty("invariants.guard-prompt", enabled ? null : "disabled"));
+    }
+    private static AgentDefinition.LifecycleSettings lifecycle(Properties p) {
+        boolean enabled = Boolean.parseBoolean(p.getProperty("lifecycle.enabled", "false"));
+        return new AgentDefinition.LifecycleSettings(enabled,
+                Integer.parseInt(p.getProperty("lifecycle.max-completion-tokens", "600")),
+                p.getProperty("lifecycle.guard-prompt", enabled ? null : "disabled"));
     }
 }

@@ -66,33 +66,39 @@ describe('agent conversations', () => {
     expect(api.clearCredentials).toHaveBeenCalled()
   })
 
-  it('announces task memory preparation and includes its cost after SSE completion', async () => {
+  it('announces lifecycle checks and task memory preparation and includes their cost', async () => {
     const api = makeApi()
     api.agents.mockResolvedValue([{ ...agents[0], memoryLayers: true }])
     api.memory = vi.fn().mockResolvedValue({ version: 0, entries: [] })
     let callbacks, finish
     api.sendStream.mockImplementation((agentId, chatId, message, handlers) => new Promise(resolve => {
-      callbacks = handlers; finish = resolve; handlers.updating_memory()
+      callbacks = handlers; finish = resolve; handlers.checking_lifecycle()
     }))
     render(<App api={api} />)
     await screen.findByRole('heading', { name: 'С чего начнём?' })
     await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Мой вопрос')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    expect(await screen.findByText('Проверяем допустимость действия на текущем этапе…')).toBeInTheDocument()
+    callbacks.updating_memory()
     expect(await screen.findByText('Обновляем память задачи…')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ Новый чат' })).toBeDisabled()
     const completed = { ...answer(makeChat('one')), workingMemory: {
       version: 1, stage: 'REQUIREMENTS', goal: 'Сервис уведомлений', proposals: [],
       usage: { calls: 1, pricedCalls: 1, promptTokens: 10, completionTokens: 20, totalTokens: 30, totalCostUsd: .000036 }
     } }
+    callbacks.validating_lifecycle()
+    expect(await screen.findByText('Проверяем ответ по этапу задачи…')).toBeInTheDocument()
     callbacks.delta({ text: 'Какой email-провайдер?' })
     callbacks.syncing_questions()
     expect(await screen.findByText('Сохраняем вопросы в память задачи…')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ Новый чат' })).toBeDisabled()
     completed.workingMemory.openQuestions = ['Какой email-провайдер?']
+    completed.lifecycle = { usage: { calls: 2, pricedCalls: 2, promptTokens: 10, completionTokens: 10,
+      totalTokens: 20, totalCostUsd: .00002 } }
     callbacks.completed({ chat: completed }); finish()
     expect(await screen.findByText('Цель: Сервис уведомлений')).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('всего 120 токенов')
-    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('$0.000144')
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('всего 140 токенов')
+    expect(screen.getByRole('region', { name: 'Суммарный расход чата' })).toHaveTextContent('$0.000164')
   })
   it('shows empty state and creates independent chats', async () => {
     const api = makeApi()

@@ -16,7 +16,8 @@ class MemoryControllerTest {
     @TempDir Path directory;
     @Test void validatesMemoryEndpointsVersionsAndStreamsMemoryPhaseWithoutExposingPrompts() throws Exception {
         var registry = new AgentRegistry((d, messages) -> MemoryLayersTest.reply(
-                d.systemPrompt().equals(d.memoryLayers().questionsPrompt()) ? "{\"questions\":[]}"
+                d.systemPrompt().equals(d.lifecycle().guardPrompt()) ? "{\"result\":\"ALLOW\",\"violation\":null}"
+                        : d.systemPrompt().equals(d.memoryLayers().questionsPrompt()) ? "{\"questions\":[]}"
                         : MemoryLayersTest.extraction(d) ? MemoryLayersTest.EXTRACT : "ok"), "classpath:agents/*.yaml");
         var service = new ChatService(registry, new FileChatRepository(directory.resolve("chats").toString()),
                 new FileLongTermMemoryRepository(directory.resolve("memory").toString()));
@@ -26,6 +27,7 @@ class MemoryControllerTest {
         mvc.perform(get("/api/agents")).andExpect(jsonPath("$[0].memoryLayers").value(true))
                 .andExpect(jsonPath("$[0].memoryRecentMessages").value(10))
                 .andExpect(jsonPath("$[0].invariants").value(true))
+                .andExpect(jsonPath("$[0].lifecycle").value(true))
                 .andExpect(jsonPath("$[0].systemPrompt").doesNotExist());
         mvc.perform(get("/api/agents/architect/memory")).andExpect(status().isOk()).andExpect(jsonPath("$.entries").isEmpty());
         mvc.perform(get("/api/agents/chef/memory")).andExpect(status().isBadRequest());
