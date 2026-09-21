@@ -1,0 +1,9 @@
+{
+  "name": "ai-advent-local-mcp-servers",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned local MCP servers used by the AI Advent application",
+  "dependencies": {
+    "@modelcontextprotocol/server-filesystem": "2026.7.4"
+  }
+}

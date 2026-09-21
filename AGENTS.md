@@ -5,6 +5,7 @@
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
 - Day 12 adds authenticated user profiles and personalization on top of the Day 11 memory layers. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
+- Day 16 adds authenticated MCP connection discovery. Keep MCP credentials, process configuration and filesystem roots on the backend; the UI may display server metadata and tools but must not execute tools unless a later task explicitly requests it.
 
 ## Architecture
 
@@ -15,6 +16,7 @@
 - Context strategy defaults, window sizes, summary/facts prompts and generation limits are server-owned per-agent YAML configuration. Choose the strategy when creating a chat and persist it for that chat.
 - Input, cached-input and output prices are server-owned YAML values and must not be trusted from the browser.
 - An Agent encapsulates context construction, generation and response handling; controllers must not call the provider.
+- Use Spring AI's MCP client for protocol negotiation and tool discovery. A local filesystem MCP process must be restricted to explicit roots and remain separate from persisted chat storage concerns.
 - Encapsulate retention and memory preparation in ContextStrategy implementations. Build provider context only from the selected chat or branch.
 - Summary retains recent messages plus cumulative summary; Sliding Window sends only recent complete turns but preserves the full conversation in storage and UI; Sticky Facts preserves the full conversation, updates key-value memory from recent complete turns, and sends facts plus those turns; Branching retains checkpoint history plus its own continuation.
 - Keep Sliding Window and Sticky Facts provider contexts separate from persisted history. Never save their truncated provider views or archive usage for messages that remain in full history.
@@ -56,6 +58,7 @@
 - Keep `package-lock.json` committed and use `npm ci` for reproducible frontend builds.
 - Backend tests cover YAML, pricing and compression validation; token/cost calculation; extensible agents; compressed-context role/order; cross-chat and cross-agent isolation; restart persistence; idempotent retry (including archived message IDs); bounded concurrency; SSE events; summary failures; and provider failures.
 - Frontend tests cover agent/chat/branch switching, strategy selection, empty/loading/streaming/summarizing/updating-facts/success/error states, retry drafts, safe Markdown, context-memory display and token/cost metric rendering.
+- MCP tests cover successful initialization metadata, paginated tool discovery, sanitized discovery failures and the authenticated MCP tab.
 - Test all four strategies with the same multi-turn fixture, facts replacement/deletion/failure, window eviction and retry, concurrent branch writes, checkpoint persistence and cross-agent isolation. Mock the provider for reproducible tests.
 - Run focused tests during development, then `npm test`, `npm run build`, `mvn test`, and `mvn package` for broad changes.
 

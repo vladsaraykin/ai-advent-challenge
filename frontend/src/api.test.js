@@ -22,6 +22,18 @@ describe('SSE chat API', () => {
     expect(fetch.mock.calls[0][1].headers.Authorization).toBe(`Basic ${btoa('alice:secret-123')}`)
   })
 
+  it('loads MCP servers from the authenticated backend endpoint', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ id: 'filesystem', tools: [] }]), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    }))
+    vi.stubGlobal('fetch', fetch)
+    agentApi.setCredentials('alice', 'secret-123')
+
+    await expect(agentApi.mcpServers()).resolves.toEqual([{ id: 'filesystem', tools: [] }])
+    expect(fetch.mock.calls[0][0]).toBe('/api/mcp/servers')
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe(`Basic ${btoa('alice:secret-123')}`)
+  })
+
   it('calls task pause and resume commands with optimistic versions', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'one' }), {
       status: 200, headers: { 'Content-Type': 'application/json' }

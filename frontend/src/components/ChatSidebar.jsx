@@ -1,6 +1,6 @@
 import { strategyNames } from './StrategyPanel'
 
-export default function ChatSidebar({ agents, agentId, chats, chatId, disabled, onAgent, onChat, onCreate, onDelete }) {
+export default function ChatSidebar({ agents, agentId, chats, chatId, disabled, activeView, onView, onAgent, onChat, onCreate, onDelete }) {
   const ordered = []
   const visit = (chat, depth) => {
     ordered.push({ chat, depth })
@@ -9,7 +9,14 @@ export default function ChatSidebar({ agents, agentId, chats, chatId, disabled, 
   chats.filter(chat => !chat.parentChatId || !chats.some(item => item.id === chat.parentChatId))
     .forEach(chat => visit(chat, 0))
   return <aside className="sidebar">
-      <a className="brand" href="/">Мои агенты<span>AI Advent · День 11</span></a>
+      <a className="brand" href="/">AI Advent<span>Агенты и MCP · День 16</span></a>
+    <div className="product-nav" role="tablist" aria-label="Разделы приложения">
+      <button type="button" role="tab" aria-selected={activeView === 'chat'} className={activeView === 'chat' ? 'selected' : ''}
+        onClick={() => onView('chat')}>Агенты</button>
+      <button type="button" role="tab" aria-selected={activeView === 'mcp'} className={activeView === 'mcp' ? 'selected' : ''}
+        onClick={() => onView('mcp')}>MCP</button>
+    </div>
+    {activeView === 'chat' && <>
     <label className="agent-select">Ваш помощник
       <select value={agentId} onChange={event => onAgent(event.target.value)} disabled={disabled}>
         {!agents.length && <option value="">Загрузка агентов…</option>}
@@ -28,5 +35,6 @@ export default function ChatSidebar({ agents, agentId, chats, chatId, disabled, 
       {!chats.length && <p className="sidebar-empty">Здесь появятся ваши диалоги с этим агентом.</p>}
     </nav>
     <p className="sidebar-footer">Новая тема — новый чат.<br />Предыдущие диалоги останутся в истории.</p>
+    </>}
   </aside>
 }

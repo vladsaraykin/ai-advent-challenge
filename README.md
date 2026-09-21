@@ -1,4 +1,4 @@
-# AI Advent Challenge — День 15. Контролируемые переходы состояний
+# AI Advent Challenge — День 16. Подключение MCP
 
 Web-чат с независимо настраиваемыми агентами: **Архитектор ПО**, **Повар-помощник** и **Про технологии**.
 У каждого агента может быть несколько чатов. История каждого чата сохраняется на сервере,
@@ -12,6 +12,7 @@ Lifecycle-guard не позволяет ассистенту начать реа
 задачу завершённой до Validation. Переходы выполняет только backend, последовательно и без пропуска этапов.
 Доступ защищён HTTP Basic: после входа пользователь получает собственные чаты, память и профиль.
 Стиль, формат и ограничения активного профиля автоматически добавляются к каждому основному запросу агента.
+После авторизации доступна отдельная вкладка MCP со статусом подключённых серверов и списком обнаруженных инструментов.
 Для каждого ответа сохраняются токены текущего сообщения, истории, системного промпта,
 точные usage-метрики OpenAI и стоимость вызова. В UI также виден накопительный расход чата.
 
@@ -23,6 +24,41 @@ Lifecycle-guard не позволяет ассистенту начать реа
 4. Нажмите «Новый чат», выберите стратегию или откройте существующий диалог.
 5. Напишите сообщение и нажмите «Отправить» или Enter. Shift + Enter добавляет новую строку. Новый чат создаётся при первой отправке.
 6. Для смены пользователя откройте профиль и нажмите «Выйти и сменить профиль».
+7. Откройте вкладку «MCP»: в ней отображаются соединение с Filesystem MCP, версия протокола и инструменты с описаниями.
+
+## MCP: локальная файловая система
+
+Backend использует Spring AI MCP Client и запускает официальный
+`@modelcontextprotocol/server-filesystem` как отдельный локальный процесс через `stdio`.
+При старте выполняется MCP handshake, после чего endpoint `/api/mcp/servers` запрашивает `tools/list`.
+В текущем задании инструменты только отображаются: они не передаются LLM и не могут быть вызваны из UI.
+
+Node-зависимость закреплена в `mcp/package-lock.json`. Установите её перед локальным запуском:
+
+```bash
+npm --prefix mcp ci --ignore-scripts
+```
+
+По умолчанию MCP получает доступ только к текущему рабочему каталогу процесса. Лучше задавать абсолютный
+и минимально необходимый каталог:
+
+```bash
+export MCP_FILESYSTEM_ROOT="/Users/vsaraikin/IdeaProjects/ai-advent-challenge"
+```
+
+Настройки окружения:
+
+| Переменная | Значение по умолчанию | Назначение |
+| --- | --- | --- |
+| `MCP_ENABLED` | `true` | Включить MCP-клиент |
+| `MCP_FILESYSTEM_COMMAND` | `node` | Команда локального процесса |
+| `MCP_FILESYSTEM_ENTRYPOINT` | `mcp/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js` | Entrypoint сервера |
+| `MCP_FILESYSTEM_ROOT` | `.` | Единственный разрешённый корень файловой системы |
+| `MCP_REQUEST_TIMEOUT` | `20s` | Таймаут MCP-запроса |
+
+Не указывайте `/`, весь домашний каталог или каталоги с секретами. Процесс MCP работает с правами
+пользователя приложения. Для добавления следующего сервера создайте ещё одно соединение в
+`spring.ai.mcp.client.stdio.connections`; оно автоматически появится во вкладке после перезапуска.
 
 ## Профиль и персонализация
 
@@ -504,6 +540,7 @@ AGENT_CONFIG_LOCATION=file:/opt/ai-advent-challenge/config/agents/*.yaml
 | GET | `/api/auth/me` | Проверить Basic-реквизиты и получить профиль |
 | GET | `/api/profile` | Активный профиль |
 | PUT | `/api/profile` | Изменить персонализацию с optimistic version |
+| GET | `/api/mcp/servers` | Подключённые MCP-серверы и результат `tools/list` |
 | GET | `/api/agents` | Агенты и публичные настройки |
 | GET | `/api/agents/{agentId}/chats` | Список чатов агента |
 | POST | `/api/agents/{agentId}/chats` | Новый пустой чат |
@@ -546,11 +583,12 @@ AGENT_CONFIG_LOCATION=file:/opt/ai-advent-challenge/config/agents/*.yaml
 
 ## Разработка и проверки
 
-Нужны Java 21, Maven 3.9+ и `OPENAI_API_KEY`.
+Нужны Java 21, Maven 3.9+, Node.js 20+ и `OPENAI_API_KEY`.
 Maven устанавливает Node.js, собирает React и включает его в один runnable JAR.
 
 ```bash
 export OPENAI_API_KEY="ваш-api-ключ"
+npm --prefix mcp ci --ignore-scripts
 mvn spring-boot:run
 ```
 
@@ -585,6 +623,7 @@ mvn package
 файловое восстановление профиля, optimistic locking, межпользовательская изоляция и подстановка профиля в prompt.
 Для Day 15 проверяются ранняя реализация, преждевременное завершение, сокрытие запрещённого черновика,
 разрешённое продолжение после явного перехода, строгая JSON-валидация guard и его метрики.
+Для Day 16 проверяются MCP metadata, пагинация `tools/list`, безопасная ошибка discovery и отображение вкладки.
 Эти проверки не оценивают качество реальных ответов OpenAI.
 
 ## Логи
@@ -602,10 +641,12 @@ sudo journalctl -u ai-advent-challenge -f
 показывают каждый отдельный вызов модели. Видны агент, модель, размер истории, количество вызовов,
 токены, стоимость и время; текст диалога, системный промпт и секреты не логируются.
 Каждое событие `*_started` соответствует одному вызову HTTP-клиента без автоматических retries.
+Событие `mcp_tools_listed` содержит только ID соединения, имя сервера и количество инструментов;
+описания и параметры tools в лог не выводятся.
 
 ## Production-сборка
 
-Из корня проекта выполните:
+Из корня проекта выполните (Maven сам выполнит `npm ci` для UI и MCP):
 
 ```bash
 mvn clean package
@@ -624,11 +665,15 @@ export OPENAI_API_KEY="ваш-api-ключ"
 java -jar target/ai-advent-challenge-0.0.1-SNAPSHOT.jar
 ```
 
+Filesystem MCP — внешний Node-процесс, поэтому рядом с JAR должен существовать каталог `mcp/node_modules`.
+Если JAR запускается не из корня проекта, задайте абсолютный `MCP_FILESYSTEM_ENTRYPOINT`.
+
 ## Деплой и запуск на `cloudvm`
 
 На виртуальной машине уже должны существовать:
 
 - Java 21;
+- Node.js 20+ и установленный каталог `/opt/ai-advent-challenge/mcp/node_modules`;
 - systemd-сервис `ai-advent-challenge.service`;
 - Nginx, проксирующий HTTP-запросы на `127.0.0.1:8080`;
 - защищённый `/etc/ai-advent-challenge.env` с `OPENAI_API_KEY` и настройками proxy.
@@ -644,8 +689,10 @@ mvn clean package
 Загрузите JAR во временный файл:
 
 ```bash
+ssh cloudvm 'mkdir -p /tmp/ai-advent-mcp'
 scp target/ai-advent-challenge-0.0.1-SNAPSHOT.jar \
   cloudvm:/tmp/ai-advent-challenge.jar
+scp mcp/package.json mcp/package-lock.json cloudvm:/tmp/ai-advent-mcp/
 ```
 
 Установите артефакт и перезапустите сервис:
@@ -656,9 +703,26 @@ ssh cloudvm '
   sudo install -o vlad -g vlad -m 0644 \
     /tmp/ai-advent-challenge.jar \
     /opt/ai-advent-challenge/ai-advent-challenge.jar
+  sudo install -d -o vlad -g vlad -m 0755 \
+    /opt/ai-advent-challenge/mcp \
+    /opt/ai-advent-challenge/mcp-workspace
+  sudo install -o vlad -g vlad -m 0644 \
+    /tmp/ai-advent-mcp/package.json \
+    /tmp/ai-advent-mcp/package-lock.json \
+    /opt/ai-advent-challenge/mcp/
+  cd /opt/ai-advent-challenge/mcp
+  npm ci --omit=dev --ignore-scripts
   rm -f /tmp/ai-advent-challenge.jar
+  rm -rf /tmp/ai-advent-mcp
   sudo systemctl restart ai-advent-challenge
 '
+```
+
+Добавьте в уже существующий `/etc/ai-advent-challenge.env`, не перезаписывая остальные значения:
+
+```text
+MCP_FILESYSTEM_ENTRYPOINT=/opt/ai-advent-challenge/mcp/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js
+MCP_FILESYSTEM_ROOT=/opt/ai-advent-challenge/mcp-workspace
 ```
 
 Проверьте приложение без расходования OpenAI-токенов:

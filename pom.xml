@@ -15,7 +15,7 @@
     <artifactId>ai-advent-challenge</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>AI Advent Challenge</name>
-    <description>Day 12 personalized AI agents</description>
+    <description>AI Advent Challenge agent with memory, lifecycle and MCP discovery</description>
 
     <properties>
         <java.version>21</java.version>
@@ -52,6 +52,10 @@
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.knuddels</groupId>
             <artifactId>jtokkit</artifactId>
             <version>1.1.0</version>
@@ -83,6 +87,14 @@
                         <id>npm-ci</id>
                         <goals><goal>npm</goal></goals>
                         <configuration><arguments>ci</arguments></configuration>
+                    </execution>
+                    <execution>
+                        <id>mcp-npm-ci</id>
+                        <goals><goal>npm</goal></goals>
+                        <configuration>
+                            <workingDirectory>mcp</workingDirectory>
+                            <arguments>ci --ignore-scripts</arguments>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>vite-build</id>

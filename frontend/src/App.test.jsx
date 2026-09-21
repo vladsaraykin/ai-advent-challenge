@@ -25,6 +25,7 @@ const answer = (chat, text = '**Ответ агента**') => ({
 })
 const makeApi = () => ({
   agents: vi.fn().mockResolvedValue(agents),
+  mcpServers: vi.fn().mockResolvedValue([]),
   chats: vi.fn().mockResolvedValue([]),
   chat: vi.fn(),
   create: vi.fn().mockResolvedValue(makeChat('one')),
@@ -37,6 +38,29 @@ const makeApi = () => ({
 beforeEach(() => localStorage.clear())
 
 describe('agent conversations', () => {
+  it('shows connected MCP servers and their discovered tools in a separate authenticated tab', async () => {
+    const api = makeApi()
+    api.mcpServers.mockResolvedValue([{
+      id: 'filesystem', name: 'Filesystem MCP Server', version: '2026.7.4',
+      protocolVersion: '2025-11-25', connected: true, error: null,
+      tools: [{ name: 'read_text_file', title: 'Read text file', description: 'Read a text file from an allowed directory.',
+        inputSchema: { type: 'object', required: ['path'] }, readOnly: true, destructive: false }]
+    }])
+    render(<App api={api} />)
+
+    await screen.findByRole('heading', { name: 'С чего начнём?' })
+    await userEvent.click(screen.getByRole('tab', { name: 'MCP' }))
+
+    expect(await screen.findByRole('heading', { name: 'MCP-подключения' })).toBeInTheDocument()
+    expect(screen.getByText('Filesystem MCP Server')).toBeInTheDocument()
+    expect(screen.getByText('read_text_file')).toBeInTheDocument()
+    expect(screen.getByText('Read a text file from an allowed directory.')).toBeInTheDocument()
+    expect(screen.getByText('Подключён')).toBeInTheDocument()
+    expect(api.mcpServers).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('tab', { name: 'Агенты' }))
+    expect(await screen.findByRole('heading', { name: 'С чего начнём?' })).toBeInTheDocument()
+  })
+
   it('authenticates, edits personalization and switches profile by logging out', async () => {
     const api = makeApi()
     const profile = { username: 'alice', displayName: 'Алиса', responseStyle: 'Кратко',

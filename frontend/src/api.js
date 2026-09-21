@@ -73,6 +73,7 @@ export const agentApi = {
   updateProfile: body => rawRequest('/api/profile', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }),
+  mcpServers: () => rawRequest('/api/mcp/servers'),
   memory: agentId => request(`/${encodeURIComponent(agentId)}/memory`),
   putMemory: (agentId, id, body) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'PUT', body),
   deleteMemory: (agentId, id, version) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'DELETE', { version }),

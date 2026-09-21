@@ -11,6 +11,7 @@ import MemoryLayers from './components/MemoryLayers'
 import InvariantPanel from './components/InvariantPanel'
 import AuthScreen from './components/AuthScreen'
 import UserProfile from './components/UserProfile'
+import McpCatalog from './components/McpCatalog'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
 const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
@@ -35,6 +36,7 @@ export default function App({ api = agentApi }) {
   const [deleting, setDeleting] = useState(false)
   const [memoryBusy, setMemoryBusy] = useState(false)
   const [reload, setReload] = useState(0)
+  const [activeView, setActiveView] = useState('chat')
   const retry = useRef(null)
   const busyRef = useRef(false)
   const deleteTrigger = useRef(null)
@@ -208,8 +210,10 @@ export default function App({ api = agentApi }) {
 
   return <main className="app-shell">
     <ChatSidebar agents={agents} agentId={agentId} chats={chats} chatId={chat?.id}
+      activeView={activeView} onView={setActiveView}
       disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onAgent={setAgentId} onChat={openChat}
       onCreate={createChat} onDelete={(target, trigger) => { deleteTrigger.current = trigger; setDeleteTarget(target) }} />
+    {activeView === 'mcp' ? <McpCatalog api={api} profile={profile} onProfile={setProfile} onLogout={logout} /> : <>
     <div className={`agent-workspace ${chat ? 'with-inspector' : ''}`}>
     <section className="conversation" aria-label="Диалог с агентом">
       <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>
@@ -245,6 +249,7 @@ export default function App({ api = agentApi }) {
       {(chat.strategy || strategy) === 'SUMMARY' && <ContextMemory agent={agent} summary={chat.summary} />}
     </aside>}
     </div>
+    </>}
     {deleteTarget && <div className="delete-overlay"><section role="alertdialog" aria-modal="true"
       aria-labelledby="delete-title" aria-describedby="delete-description" className="delete-confirm"
       onKeyDown={event => {

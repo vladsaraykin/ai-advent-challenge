@@ -33,6 +33,7 @@ out/
 # Maven build output and generated files
 target/
 frontend/node_modules/
+mcp/node_modules/
 frontend/dist/
 pom.xml.tag
 pom.xml.releaseBackup
