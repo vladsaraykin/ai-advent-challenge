@@ -19,6 +19,10 @@ public interface ConversationModel {
                                     List<ChatMessage> messages) {
         return stream(definition, messages);
     }
+    default Flux<StreamPart> stream(AgentDefinition definition, ContextSummary summary,
+                                    List<ChatMessage> messages, String mcpServerId) {
+        return stream(definition, summary, messages);
+    }
     default Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
                                   List<ChatMessage> messages) {
         return Mono.fromSupplier(() -> reply(definition, messages));

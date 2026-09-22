@@ -19,6 +19,11 @@ spring:
               args:
                 - ${MCP_FILESYSTEM_ENTRYPOINT:mcp/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js}
                 - ${MCP_FILESYSTEM_ROOT:.}
+        streamable-http:
+          connections:
+            expenses:
+              url: ${MCP_EXPENSES_URL:http://127.0.0.1:8090}
+              endpoint: ${MCP_EXPENSES_ENDPOINT:/mcp}
     openai:
       api-key: ${OPENAI_API_KEY:missing-api-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

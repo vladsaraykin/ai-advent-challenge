@@ -234,13 +234,22 @@ public class ChatService {
         return send(ChatRepository.LEGACY_OWNER, agentId, chatId, messageId, content);
     }
     public Chat send(String ownerId, String agentId, UUID chatId, UUID messageId, String content) {
-        return stream(ownerId, agentId, chatId, messageId, content).filter(e -> e.type() == StreamEvent.Type.COMPLETED)
+        return send(ownerId, agentId, chatId, messageId, content, null);
+    }
+    public Chat send(String ownerId, String agentId, UUID chatId, UUID messageId, String content,
+                     String mcpServerId) {
+        return stream(ownerId, agentId, chatId, messageId, content, mcpServerId)
+                .filter(e -> e.type() == StreamEvent.Type.COMPLETED)
                 .single().block().chat();
     }
     public Flux<StreamEvent> stream(String agentId, UUID chatId, UUID messageId, String content) {
         return stream(ChatRepository.LEGACY_OWNER, agentId, chatId, messageId, content);
     }
     public Flux<StreamEvent> stream(String ownerId, String agentId, UUID chatId, UUID messageId, String content) {
+        return stream(ownerId, agentId, chatId, messageId, content, null);
+    }
+    public Flux<StreamEvent> stream(String ownerId, String agentId, UUID chatId, UUID messageId, String content,
+                                    String mcpServerId) {
         Agent agent = registry.get(agentId);
         lock(ownerId, chatId);
         if (!calls.tryAcquire()) {
@@ -262,8 +271,9 @@ public class ChatService {
             List<LongTermMemory.Entry> entries = durable.relevant(chat.workingMemory().projectKey());
             UserProfile profile = users == null ? UserProfile.initial(ownerId) : users.profile(ownerId);
             var user = new ChatMessage(messageId, ChatMessage.Role.USER, content, Instant.now(), null);
-            log.info("agent_stream_request agentId={} chatId={} requestId={} strategy={} historyMessages={} promptLength={}",
-                    agentId, chatId, messageId, chat.strategy(), chat.messages().size(), content.length());
+            log.info("agent_stream_request agentId={} chatId={} requestId={} strategy={} historyMessages={} "
+                            + "promptLength={} mcpServer={}",
+                    agentId, chatId, messageId, chat.strategy(), chat.messages().size(), content.length(), mcpServerId);
             Mono<Prepared> preparation = Mono.defer(() -> layered && chat.strategy() == ContextStrategyType.FACTS
                             ? Mono.just(chat) : strategy.before(agent, chat, user))
                     .map(value -> new Prepared(value, null, false))
@@ -279,7 +289,7 @@ public class ChatService {
             if (!guardActive) {
                 guarded = phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
                         finalPreparation.flatMapMany(prepared -> streamingAnswer(ownerId, agentId, messageId, agent,
-                                strategy, prepared, user, entries, profile, layered)));
+                                strategy, prepared, user, entries, profile, layered, mcpServerId)));
             } else {
                 Mono<Agent.LifecycleCheck> lifecycleGuard = lifecycleActive
                         ? Mono.defer(() -> agent.checkLifecycle(chat, user, null))
@@ -307,7 +317,7 @@ public class ChatService {
                         return phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
                                 checkedPreparation.flatMapMany(prepared -> validatedAnswer(ownerId, agentId,
                                         messageId, agent, strategy, chat, prepared, user, entries, profile,
-                                        layered, lifecycleActive, invariantActive)));
+                                        layered, lifecycleActive, invariantActive, mcpServerId)));
                     }));
                 }));
             }
@@ -320,8 +330,10 @@ public class ChatService {
     }
     private Flux<StreamEvent> streamingAnswer(String ownerId, String agentId, UUID messageId, Agent agent,
             ContextStrategy strategy, Prepared prepared, ChatMessage user, List<LongTermMemory.Entry> entries,
-            UserProfile profile, boolean layered) {
-        return agent.answerStream(strategy.context(agent, prepared.chat()), user, entries, profile).concatMap(part -> {
+            UserProfile profile, boolean layered, String mcpServerId) {
+        Flux<StreamEvent> answer = agent.answerStream(strategy.context(agent, prepared.chat()), user, entries,
+                        profile, mcpServerId)
+                .concatMap(part -> {
             if (part.completed() == null) return Mono.just(StreamEvent.delta(part.delta()));
             Mono<Chat> appended = Mono.defer(() -> agent.completeMemory(prepared.chat(), user, part.completed()))
                     .map(memory -> prepared.chat().withWorkingMemory(memory).append(user, part.completed()));
@@ -330,12 +342,15 @@ public class ChatService {
             return phase(layered && !prepared.chat().workingMemory().goal().isBlank()
                     ? "SYNCING_QUESTIONS" : null, completion);
         });
+        return mcpServerId == null ? answer
+                : Flux.concat(Flux.just(StreamEvent.phase(StreamEvent.Type.USING_MCP)), answer);
     }
     private Flux<StreamEvent> validatedAnswer(String ownerId, String agentId, UUID messageId, Agent agent,
             ContextStrategy strategy, Chat original, Prepared prepared, ChatMessage user,
             List<LongTermMemory.Entry> entries, UserProfile profile, boolean layered,
-            boolean lifecycleActive, boolean invariantActive) {
-        Mono<Generated> generated = agent.answerStream(strategy.context(agent, prepared.chat()), user, entries, profile)
+            boolean lifecycleActive, boolean invariantActive, String mcpServerId) {
+        Mono<Generated> generated = agent.answerStream(strategy.context(agent, prepared.chat()), user, entries,
+                        profile, mcpServerId)
                 .collectList().map(Generated::from);
         Flux<StreamEvent> result = generated.flatMapMany(answer -> {
             Mono<Agent.LifecycleCheck> lifecycleGuard = lifecycleActive
@@ -372,7 +387,8 @@ public class ChatService {
                 }));
             }));
         });
-        return Flux.concat(Flux.just(StreamEvent.phase(StreamEvent.Type.GENERATING)), result);
+        return Flux.concat(Flux.just(StreamEvent.phase(mcpServerId == null
+                ? StreamEvent.Type.GENERATING : StreamEvent.Type.USING_MCP)), result);
     }
     private Flux<StreamEvent> finalizeTurn(String ownerId, String agentId, UUID messageId, Agent agent,
             ContextStrategy strategy, Prepared prepared, Chat value, ChatMessage completed) {
@@ -490,7 +506,7 @@ public class ChatService {
         }
     }
     public record StreamEvent(Type type, UUID messageId, String text, Chat chat, String warning) {
-        public enum Type { STARTED, CHECKING_LIFECYCLE, CHECKING_INVARIANTS, GENERATING,
+        public enum Type { STARTED, CHECKING_LIFECYCLE, CHECKING_INVARIANTS, GENERATING, USING_MCP,
             VALIDATING_LIFECYCLE, VALIDATING_ANSWER,
             SUMMARIZING, UPDATING_FACTS, UPDATING_MEMORY, SYNCING_QUESTIONS, DELTA, COMPLETED }
         static StreamEvent started(UUID id) { return new StreamEvent(Type.STARTED, id, null, null, null); }

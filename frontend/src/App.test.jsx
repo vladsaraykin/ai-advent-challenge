@@ -61,6 +61,34 @@ describe('agent conversations', () => {
     expect(await screen.findByRole('heading', { name: 'С чего начнём?' })).toBeInTheDocument()
   })
 
+  it('keeps normal chat by default and explicitly sends the selected MCP connection', async () => {
+    const api = makeApi()
+    api.mcpServers.mockResolvedValue([{
+      id: 'custom-tools', name: 'Custom MCP', connected: true, error: null,
+      tools: [{ name: 'lookup_order', title: 'Lookup order', description: 'Finds an order' }]
+    }])
+    let finish
+    api.sendStream.mockImplementation((agentId, chatId, message, handlers) => new Promise(resolve => {
+      handlers.using_mcp()
+      finish = () => { handlers.completed({ chat: answer(makeChat('one')) }); resolve() }
+    }))
+    render(<App api={api} />)
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Разрешить агенту MCP-инструменты' })
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+    expect(screen.getByLabelText('Сервер MCP')).toHaveValue('custom-tools')
+    await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Найди заказ 42')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+
+    expect(await screen.findByText('Модель выбирает и выполняет MCP-инструменты…')).toBeInTheDocument()
+    expect(api.sendStream.mock.calls[0][2]).toEqual(expect.objectContaining({
+      content: 'Найди заказ 42', mcpServerId: 'custom-tools'
+    }))
+    finish()
+    await screen.findByText('Ответ агента')
+  })
+
   it('authenticates, edits personalization and switches profile by logging out', async () => {
     const api = makeApi()
     const profile = { username: 'alice', displayName: 'Алиса', responseStyle: 'Кратко',

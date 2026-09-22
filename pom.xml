@@ -15,7 +15,7 @@
     <artifactId>ai-advent-challenge</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>AI Advent Challenge</name>
-    <description>AI Advent Challenge agent with memory, lifecycle and MCP discovery</description>
+    <description>AI Advent Challenge agent with memory, lifecycle and MCP tools</description>
 
     <properties>
         <java.version>21</java.version>

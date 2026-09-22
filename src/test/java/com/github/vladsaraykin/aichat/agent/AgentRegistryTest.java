@@ -21,6 +21,12 @@ class AgentRegistryTest {
         assertThat(registry.get("architect").definition().lifecycle().enabled()).isTrue();
         assertThat(registry.get("architect").definition().lifecycle().guardPrompt()).contains("PREMATURE_EXECUTION");
         assertThat(registry.get("architect").definition().pricing()).isEqualTo(registry.get("techno").definition().pricing());
+        assertThat(registry.get("assistant").definition().name()).isEqualTo("Личный ассистент");
+        assertThat(registry.get("assistant").definition().model()).isEqualTo("gpt-4.1-mini");
+        assertThat(registry.get("assistant").definition().contextManagement().defaultStrategy().name())
+                .isEqualTo("SLIDING_WINDOW");
+        assertThat(registry.get("assistant").definition().memoryLayers().enabled()).isFalse();
+        assertThat(registry.get("assistant").definition().systemPrompt()).contains("MCP-инструменты");
         assertThat(registry.get("chef").definition().memoryLayers().enabled()).isFalse();
         assertThat(registry.get("chef").definition().invariants().enabled()).isFalse();
         assertThat(registry.get("chef").definition().lifecycle().enabled()).isFalse();

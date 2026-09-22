@@ -51,7 +51,8 @@ export default function MessageList({ messages, agent, pending, draft, streamedA
                 ? 'Формируем ответ в рамках инвариантов…' : streamPhase === 'validating_answer'
                   ? 'Проверяем ответ по инвариантам…' : streamPhase === 'checking_lifecycle'
                     ? 'Проверяем допустимость действия на текущем этапе…' : streamPhase === 'validating_lifecycle'
-                      ? 'Проверяем ответ по этапу задачи…' : `${agent?.name} подключается к модели…`}</div>}</>}
+                      ? 'Проверяем ответ по этапу задачи…' : streamPhase === 'using_mcp'
+                        ? 'Модель выбирает и выполняет MCP-инструменты…' : `${agent?.name} подключается к модели…`}</div>}</>}
     <div ref={bottom} />
   </div>
 }

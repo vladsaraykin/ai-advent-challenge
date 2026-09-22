@@ -45,7 +45,10 @@ public class AgentController {
         }
     }
     public record SendRequest(@NotNull UUID messageId,
-                              @NotBlank @Size(max = 12000) String content) { }
+                              @NotBlank @Size(max = 12000) String content,
+                              @Size(max = 100) String mcpServerId) {
+        public SendRequest(UUID messageId, String content) { this(messageId, content, null); }
+    }
 
     @GetMapping public List<AgentView> agents() { return service.agents().stream().map(AgentView::from).toList(); }
     @GetMapping("/{agentId}/chats") public List<ChatSummary> chats(Principal principal, @PathVariable String agentId) {
@@ -70,14 +73,15 @@ public class AgentController {
     public void delete(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId) { service.delete(owner(principal), agentId, chatId); }
     @PostMapping("/{agentId}/chats/{chatId}/messages")
     public Chat send(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId, @Valid @RequestBody SendRequest request) {
-        return service.send(owner(principal), agentId, chatId, request.messageId(), request.content().strip());
+        return service.send(owner(principal), agentId, chatId, request.messageId(), request.content().strip(),
+                normalizedMcp(request.mcpServerId()));
     }
 
     @PostMapping(value = "/{agentId}/chats/{chatId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<Flux<ServerSentEvent<Object>>> stream(Principal principal, @PathVariable String agentId,
             @PathVariable UUID chatId, @Valid @RequestBody SendRequest request) {
         Flux<ServerSentEvent<Object>> events = service.stream(owner(principal), agentId, chatId, request.messageId(),
-                        request.content().strip())
+                        request.content().strip(), normalizedMcp(request.mcpServerId()))
                 .map(event -> ServerSentEvent.builder((Object) event)
                         .event(event.type().name().toLowerCase(Locale.ROOT)).build())
                 .onErrorResume(ChatFailure.class, failure -> Flux.just(ServerSentEvent.builder((Object)
@@ -87,5 +91,8 @@ public class AgentController {
     }
     public ResponseEntity<Flux<ServerSentEvent<Object>>> stream(String agentId, UUID chatId, SendRequest request) {
         return stream(null, agentId, chatId, request);
+    }
+    private static String normalizedMcp(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 }

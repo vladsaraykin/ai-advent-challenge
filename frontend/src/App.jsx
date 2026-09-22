@@ -37,6 +37,11 @@ export default function App({ api = agentApi }) {
   const [memoryBusy, setMemoryBusy] = useState(false)
   const [reload, setReload] = useState(0)
   const [activeView, setActiveView] = useState('chat')
+  const [mcpServers, setMcpServers] = useState([])
+  const [mcpLoading, setMcpLoading] = useState(false)
+  const [mcpError, setMcpError] = useState('')
+  const [mcpEnabled, setMcpEnabled] = useState(false)
+  const [mcpServerId, setMcpServerId] = useState('')
   const retry = useRef(null)
   const busyRef = useRef(false)
   const deleteTrigger = useRef(null)
@@ -74,6 +79,21 @@ export default function App({ api = agentApi }) {
     }).catch(exception => { if (active) { setError(exception.message); setLoading(false) } })
     return () => { active = false }
   }, [api, reload, profile?.username])
+
+  useEffect(() => {
+    if (!profile || typeof api.mcpServers !== 'function') return
+    let active = true
+    setMcpLoading(true); setMcpError('')
+    api.mcpServers().then(items => {
+      if (!active) return
+      setMcpServers(items)
+      const available = items.filter(item => item.connected && !item.error && item.tools?.length)
+      setMcpServerId(current => available.some(item => item.id === current) ? current : (available[0]?.id || ''))
+      if (!available.length) setMcpEnabled(false)
+    }).catch(exception => { if (active) { setMcpServers([]); setMcpError(exception.message); setMcpEnabled(false) } })
+      .finally(() => { if (active) setMcpLoading(false) })
+    return () => { active = false }
+  }, [api, profile?.username, reload])
 
   useEffect(() => {
     if (!agentId) return
@@ -164,6 +184,8 @@ export default function App({ api = agentApi }) {
     if (busyRef.current || loading || !agent) return
     const content = draft.trim()
     if (!content) { setError('Введите сообщение'); return }
+    if (mcpEnabled && !mcpServerId) { setError('Выберите доступный MCP-сервер'); return }
+    const selectedMcp = mcpEnabled ? mcpServerId : null
     busyRef.current = true; setPending(true); setStreamedAnswer(''); setStreamPhase('connecting')
     setError(''); setNotice('')
     try {
@@ -171,17 +193,21 @@ export default function App({ api = agentApi }) {
       if (!chat) updateChat(current)
       const key = `${agentId}/${current.id}`
       setDrafts(values => ({ ...values, [draftKey]: '', [key]: '' }))
-      if (!retry.current || retry.current.chatId !== current.id || retry.current.content !== content) {
-        retry.current = { chatId: current.id, content, messageId: newMessageId() }
+      if (!retry.current || retry.current.chatId !== current.id || retry.current.content !== content
+          || retry.current.mcpServerId !== selectedMcp) {
+        retry.current = { chatId: current.id, content, mcpServerId: selectedMcp, messageId: newMessageId() }
       }
       let completed
-      await api.sendStream(agentId, current.id, { messageId: retry.current.messageId, content }, {
+      await api.sendStream(agentId, current.id, {
+        messageId: retry.current.messageId, content, mcpServerId: retry.current.mcpServerId
+      }, {
         updating_memory: () => setStreamPhase('updating_memory'),
         syncing_questions: () => setStreamPhase('syncing_questions'),
         updating_facts: () => setStreamPhase('updating_facts'),
         summarizing: () => setStreamPhase('summarizing'),
         checking_invariants: () => setStreamPhase('checking_invariants'),
         checking_lifecycle: () => setStreamPhase('checking_lifecycle'),
+        using_mcp: () => setStreamPhase('using_mcp'),
         generating: () => setStreamPhase('generating'),
         validating_lifecycle: () => setStreamPhase('validating_lifecycle'),
         validating_answer: () => setStreamPhase('validating_answer'),
@@ -205,6 +231,7 @@ export default function App({ api = agentApi }) {
 
   function logout() {
     api.clearCredentials(); setProfile(null); setAgents([]); setAgentId(''); setChats([]); setChat(null)
+    setMcpEnabled(false); setMcpServerId(''); setMcpServers([])
     setError(''); setNotice(''); retry.current = null
   }
 
@@ -213,7 +240,9 @@ export default function App({ api = agentApi }) {
       activeView={activeView} onView={setActiveView}
       disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onAgent={setAgentId} onChat={openChat}
       onCreate={createChat} onDelete={(target, trigger) => { deleteTrigger.current = trigger; setDeleteTarget(target) }} />
-    {activeView === 'mcp' ? <McpCatalog api={api} profile={profile} onProfile={setProfile} onLogout={logout} /> : <>
+    {activeView === 'mcp' ? <McpCatalog servers={mcpServers} loading={mcpLoading} error={mcpError}
+      onReload={() => setReload(value => value + 1)} profile={profile} api={api}
+      onProfile={setProfile} onLogout={logout} /> : <>
     <div className={`agent-workspace ${chat ? 'with-inspector' : ''}`}>
     <section className="conversation" aria-label="Диалог с агентом">
       <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>
@@ -232,7 +261,10 @@ export default function App({ api = agentApi }) {
       {error && <div className="error-banner" role="alert"><span>{error}</span>
         {!pending && <button type="button" onClick={() => { setError(''); setReload(value => value + 1) }}>Обновить</button>}</div>}
       <MessageComposer draft={draft} onChange={value => setDrafts(current => ({ ...current, [draftKey]: value }))}
-        onSubmit={send} pending={pending} disabled={loading || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy} />
+        onSubmit={send} pending={pending} disabled={loading || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy}
+        mcpServers={mcpServers.filter(item => item.connected && !item.error && item.tools?.length)}
+        mcpEnabled={mcpEnabled} mcpServerId={mcpServerId}
+        onMcpEnabled={setMcpEnabled} onMcpServer={setMcpServerId} />
       <p className="context-note">{agent?.memoryLayers
         ? 'История и задача изолированы по чатам и веткам. Профиль и подтверждённая долговременная память принадлежат текущему пользователю.'
         : 'Контекст и история изолированы по пользователям, чатам и веткам. Активный профиль применяется автоматически.'}</p>

@@ -80,7 +80,7 @@ public class McpCatalogService {
                 annotations == null ? null : annotations.destructiveHint());
     }
 
-    private static String connectionId(McpSyncClient client) {
+    public static String connectionId(McpSyncClient client) {
         var info = client.getClientInfo();
         var title = info == null ? null : info.title();
         if (title != null && !title.isBlank()) {

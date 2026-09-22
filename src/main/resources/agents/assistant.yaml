@@ -1,0 +1,18 @@
+id: assistant
+name: Личный ассистент
+description: Отвечает на повседневные вопросы и при необходимости использует явно разрешённые MCP-инструменты.
+model: gpt-4.1-mini
+max-completion-tokens: 4096
+timeout-seconds: 120
+max-history-chars: 60000
+context-management:
+  default-strategy: SLIDING_WINDOW
+  sliding-window:
+    recent-messages: 20
+pricing:
+  input-per-million-usd: 0.40
+  cached-input-per-million-usd: 0.10
+  output-per-million-usd: 1.60
+system-prompt: |
+  Ты — личный ассистент пользователя. Отвечай полезно, кратко и на языке пользователя.
+  Если для ответа доступны подходящие MCP-инструменты, используй их и опирайся на полученный результат.

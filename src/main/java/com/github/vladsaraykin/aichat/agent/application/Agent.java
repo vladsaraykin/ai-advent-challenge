@@ -37,6 +37,11 @@ public interface Agent {
             com.github.vladsaraykin.aichat.user.domain.UserProfile profile) {
         return answerStream(chat, user, entries);
     }
+    default Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user,
+            List<com.github.vladsaraykin.aichat.agent.domain.LongTermMemory.Entry> entries,
+            com.github.vladsaraykin.aichat.user.domain.UserProfile profile, String mcpServerId) {
+        return answerStream(chat, user, entries, profile);
+    }
     default Mono<com.github.vladsaraykin.aichat.agent.domain.ContextMemory> updateFacts(
             com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user) {
         return Mono.error(new UnsupportedOperationException("Facts are not supported"));

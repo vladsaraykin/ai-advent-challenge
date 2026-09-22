@@ -2,6 +2,7 @@ package com.github.vladsaraykin.aichat.agent.infrastructure;
 
 import com.github.vladsaraykin.aichat.agent.application.*;
 import com.github.vladsaraykin.aichat.agent.domain.*;
+import com.github.vladsaraykin.aichat.mcp.application.McpToolService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Component;
@@ -22,9 +25,17 @@ public class OpenAiConversationModel implements ConversationModel {
     private static final Logger log = LoggerFactory.getLogger(OpenAiConversationModel.class);
     private final ChatModel model;
     private final TokenCounter tokenCounter;
-    public OpenAiConversationModel(ChatModel model, TokenCounter tokenCounter) {
+    private final McpToolService mcpTools;
+    private final ChatClient chatClient;
+    @org.springframework.beans.factory.annotation.Autowired
+    public OpenAiConversationModel(ChatModel model, TokenCounter tokenCounter, McpToolService mcpTools) {
         this.model = model;
         this.tokenCounter = tokenCounter;
+        this.mcpTools = mcpTools;
+        this.chatClient = ChatClient.create(model);
+    }
+    OpenAiConversationModel(ChatModel model, TokenCounter tokenCounter) {
+        this(model, tokenCounter, null);
     }
 
     @Override public Reply reply(AgentDefinition definition, List<ChatMessage> messages) {
@@ -85,16 +96,22 @@ public class OpenAiConversationModel implements ConversationModel {
     @Override public Flux<StreamPart> stream(AgentDefinition definition, ContextSummary summary,
                                              List<ChatMessage> messages) {
         return streamCall(definition, summary, messages, prompt(definition, summary, messages, true),
-                definition.systemPrompt(), "llm_stream");
+                definition.systemPrompt(), "llm_stream", null);
+    }
+
+    @Override public Flux<StreamPart> stream(AgentDefinition definition, ContextSummary summary,
+                                             List<ChatMessage> messages, String mcpServerId) {
+        return streamCall(definition, summary, messages, prompt(definition, summary, messages, true),
+                definition.systemPrompt(), "llm_stream", mcpServerId);
     }
 
     @Override public Flux<StreamPart> extractFacts(AgentDefinition definition, List<ChatMessage> messages) {
         return streamCall(definition, null, messages, prompt(definition, null, messages, true),
-                definition.systemPrompt(), "llm_facts");
+                definition.systemPrompt(), "llm_facts", null);
     }
     @Override public Flux<StreamPart> extractMemory(AgentDefinition definition, List<ChatMessage> messages) {
         return streamCall(definition, null, messages, memoryPrompt(definition, messages),
-                definition.systemPrompt(), "llm_memory");
+                definition.systemPrompt(), "llm_memory", null);
     }
 
     static Prompt memoryPrompt(AgentDefinition definition, List<ChatMessage> messages) {
@@ -106,28 +123,28 @@ public class OpenAiConversationModel implements ConversationModel {
     }
     @Override public Flux<StreamPart> extractQuestions(AgentDefinition definition, List<ChatMessage> messages) {
         return streamCall(definition, null, messages, memoryPrompt(definition, messages),
-                definition.systemPrompt(), "llm_questions");
+                definition.systemPrompt(), "llm_questions", null);
     }
     @Override public Flux<StreamPart> checkInvariants(AgentDefinition definition, List<ChatMessage> messages) {
         return streamCall(definition, null, messages, memoryPrompt(definition, messages),
-                definition.systemPrompt(), "llm_invariant_guard");
+                definition.systemPrompt(), "llm_invariant_guard", null);
     }
     @Override public Flux<StreamPart> checkLifecycle(AgentDefinition definition, List<ChatMessage> messages) {
         return streamCall(definition, null, messages, memoryPrompt(definition, messages),
-                definition.systemPrompt(), "llm_lifecycle_guard");
+                definition.systemPrompt(), "llm_lifecycle_guard", null);
     }
 
     @Override public Mono<Reply> summarize(AgentDefinition definition, ContextSummary previous,
                                            List<ChatMessage> messages) {
         var compression = definition.compression();
         return streamCall(definition, previous, messages, summaryPrompt(definition, previous, messages),
-                        compression.systemPrompt(), "llm_summary")
+                        compression.systemPrompt(), "llm_summary", null)
                 .filter(part -> part.completed() != null).map(StreamPart::completed).single();
     }
 
     private Flux<StreamPart> streamCall(AgentDefinition definition, ContextSummary summary,
                                         List<ChatMessage> messages, Prompt request,
-                                        String systemPrompt, String operation) {
+                                        String systemPrompt, String operation, String mcpServerId) {
         return Flux.defer(() -> {
             long started = System.nanoTime();
             var text = new StringBuilder();
@@ -136,9 +153,16 @@ public class OpenAiConversationModel implements ConversationModel {
             var totalTokens = new AtomicInteger();
             var cachedPromptTokens = new AtomicInteger();
             var finishReason = new AtomicReference<String>();
-            log.info("{}_started agentId={} model={} contextMessages={} outboundCalls=1",
-                    operation, definition.id(), definition.model(), request.getInstructions().size());
-            Flux<StreamPart> deltas = model.stream(request).map(response -> {
+            var callbacks = mcpTools == null
+                    ? (mcpServerId == null ? List.<org.springframework.ai.tool.ToolCallback>of()
+                            : throwMissingMcpService())
+                    : mcpTools.callbacks(mcpServerId);
+            log.info("{}_started agentId={} model={} contextMessages={} mcpServer={} availableTools={}",
+                    operation, definition.id(), definition.model(), request.getInstructions().size(),
+                    mcpServerId, callbacks.size());
+            Flux<ChatResponse> responses = callbacks.isEmpty() ? model.stream(request)
+                    : chatClient.prompt(request).toolCallbacks(callbacks).stream().chatResponse();
+            Flux<StreamPart> deltas = responses.map(response -> {
                 if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
                     var usage = response.getMetadata().getUsage();
                     promptTokens.set(Math.max(promptTokens.get(), value(usage.getPromptTokens())));
@@ -199,6 +223,10 @@ public class OpenAiConversationModel implements ConversationModel {
         log.warn("{}_failed agentId={} model={} errorType={}", operation, definition.id(),
                 definition.model(), exception.getClass().getSimpleName());
         return new ChatFailure(ChatFailure.Kind.PROVIDER, "Не удалось получить ответ от OpenAI. Попробуйте ещё раз.");
+    }
+
+    private static List<org.springframework.ai.tool.ToolCallback> throwMissingMcpService() {
+        throw new ChatFailure(ChatFailure.Kind.INVALID, "MCP-инструменты недоступны в этой конфигурации.");
     }
 
     static Prompt prompt(AgentDefinition definition, List<ChatMessage> history) {

@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import UserProfile from './UserProfile'
 
 function ToolCard({ tool }) {
@@ -18,21 +17,7 @@ function ToolCard({ tool }) {
   </li>
 }
 
-export default function McpCatalog({ api, profile, onProfile, onLogout }) {
-  const [servers, setServers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [reload, setReload] = useState(0)
-
-  useEffect(() => {
-    let active = true
-    setLoading(true); setError('')
-    api.mcpServers().then(value => { if (active) setServers(value) })
-      .catch(exception => { if (active) setError(exception.message) })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [api, reload])
-
+export default function McpCatalog({ api, profile, onProfile, onLogout, servers = [], loading, error, onReload }) {
   return <section className="mcp-page" aria-labelledby="mcp-title">
     <header className="conversation-header"><div><span className="eyebrow">День 16</span>
       <h1 id="mcp-title">MCP-подключения</h1>
@@ -41,10 +26,10 @@ export default function McpCatalog({ api, profile, onProfile, onLogout }) {
     </header>
     <div className="mcp-content">
       <div className="mcp-intro"><div><strong>{servers.filter(server => server.connected).length}</strong><span>активных подключений</span></div>
-        <p>Приложение выполняет MCP handshake и запрашивает <code>tools/list</code>. Инструменты здесь только отображаются и не передаются модели.</p></div>
+        <p>Приложение выполняет MCP handshake и запрашивает <code>tools/list</code>. В чате можно явно выбрать один сервер и разрешить модели вызвать его инструменты.</p></div>
       {loading && <div className="loading-state" role="status">Подключаемся к MCP-серверам и загружаем инструменты…</div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span>
-        <button type="button" onClick={() => setReload(value => value + 1)}>Повторить</button></div>}
+        <button type="button" onClick={onReload}>Повторить</button></div>}
       {!loading && !error && !servers.length && <div className="mcp-empty" role="status">
         <h2>MCP-серверы не настроены</h2><p>Добавьте соединение в серверную конфигурацию и перезапустите приложение.</p>
       </div>}
