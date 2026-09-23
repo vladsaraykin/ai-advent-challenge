@@ -183,6 +183,8 @@ describe('agent conversations', () => {
     await screen.findByRole('heading', { name: 'С чего начнём?' })
     await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Мой вопрос')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    expect(within(screen.getByRole('log')).getByText('Мой вопрос')).toBeInTheDocument()
+    expect(screen.getByLabelText('Ваше сообщение')).toHaveValue('')
     expect(await screen.findByRole('status')).toHaveTextContent('подключается к модели')
     expect(screen.getByRole('combobox')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Ожидаем ответ…' })).toBeDisabled()

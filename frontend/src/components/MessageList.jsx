@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { formatTokens, formatUsd } from '../usage'
 
-export default function MessageList({ messages, agent, pending, draft, streamedAnswer = '', streamPhase = '' }) {
+export default function MessageList({ messages, agent, pending, pendingMessage = '', streamedAnswer = '', streamPhase = '' }) {
   const bottom = useRef(null)
   useEffect(() => { bottom.current?.scrollIntoView?.({ block: 'nearest' }) }, [messages, pending, streamedAnswer])
   return <div className="message-list" role="log" aria-label="Сообщения чата" aria-live="polite">
@@ -32,7 +32,9 @@ export default function MessageList({ messages, agent, pending, draft, streamedA
         {message.metrics.finishReason === 'length' && <span className="truncation-note">Ответ достиг лимита токенов. Попросите агента продолжить.</span>}
       </footer>}
     </article>)}
-    {pending && <><article className="message message-user"><div className="message-author">Вы</div><p className="pending-text">{draft}</p></article>
+    {pending && pendingMessage && <article className="message message-user"><div className="message-author">Вы</div>
+      <p className="pending-text">{pendingMessage}</p></article>}
+    {pending && <>
       {streamedAnswer
         ? <article className="message message-assistant message-streaming">
           <div className="message-author">{agent?.name}</div>

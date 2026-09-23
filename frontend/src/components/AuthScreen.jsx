@@ -19,7 +19,7 @@ export default function AuthScreen({ api, onAuthenticated }) {
   }
   return <main className="auth-shell">
     <section className="auth-card" aria-labelledby="auth-title">
-      <span className="eyebrow">AI Advent · День 12</span>
+      <span className="eyebrow">AI Advent · Персональные агенты</span>
       <h1 id="auth-title">{register ? 'Создать профиль' : 'Войти в свой профиль'}</h1>
       <p>Чаты, память и персональные настройки хранятся отдельно для каждого пользователя.</p>
       <form onSubmit={submit}>

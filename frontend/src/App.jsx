@@ -26,6 +26,7 @@ export default function App({ api = agentApi }) {
   const [chat, setChat] = useState(null)
   const [drafts, setDrafts] = useState({})
   const [pending, setPending] = useState(false)
+  const [pendingMessage, setPendingMessage] = useState('')
   const [streamedAnswer, setStreamedAnswer] = useState('')
   const [streamPhase, setStreamPhase] = useState('')
   const [notice, setNotice] = useState('')
@@ -187,6 +188,7 @@ export default function App({ api = agentApi }) {
     if (mcpEnabled && !mcpServerId) { setError('Выберите доступный MCP-сервер'); return }
     const selectedMcp = mcpEnabled ? mcpServerId : null
     busyRef.current = true; setPending(true); setStreamedAnswer(''); setStreamPhase('connecting')
+    setPendingMessage(content)
     setError(''); setNotice('')
     try {
       const current = chat || await api.create(agentId, strategy)
@@ -215,6 +217,7 @@ export default function App({ api = agentApi }) {
         completed: event => { completed = event.chat; if (event.warning) setNotice(event.warning) }
       })
       if (!completed) throw new Error('Сервер закрыл поток до завершения ответа. Попробуйте ещё раз.')
+      setPendingMessage('')
       updateChat(completed)
       setDrafts(values => ({ ...values, [key]: '' }))
       retry.current = null
@@ -223,7 +226,7 @@ export default function App({ api = agentApi }) {
         ...(retry.current?.chatId ? { [`${agentId}/${retry.current.chatId}`]: content } : {}) }))
       setError(exception.message)
     }
-    finally { busyRef.current = false; setPending(false); setStreamedAnswer(''); setStreamPhase('') }
+    finally { busyRef.current = false; setPending(false); setPendingMessage(''); setStreamedAnswer(''); setStreamPhase('') }
   }
 
   if (authLoading) return <main className="auth-shell"><div className="loading-state" role="status">Проверяем профиль…</div></main>
@@ -255,7 +258,7 @@ export default function App({ api = agentApi }) {
       {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory}
         workingMemory={chat?.workingMemory} invariants={chat?.invariants} lifecycle={chat?.lifecycle} />}
       {loading ? <div className="loading-state" role="status">Загружаем чаты…</div>
-        : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} draft={draft}
+        : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} pendingMessage={pendingMessage}
           streamedAnswer={streamedAnswer} streamPhase={streamPhase} />}
       {notice && <div className="notice-banner" role="status">{notice}</div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span>

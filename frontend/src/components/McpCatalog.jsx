@@ -19,7 +19,7 @@ function ToolCard({ tool }) {
 
 export default function McpCatalog({ api, profile, onProfile, onLogout, servers = [], loading, error, onReload }) {
   return <section className="mcp-page" aria-labelledby="mcp-title">
-    <header className="conversation-header"><div><span className="eyebrow">День 16</span>
+    <header className="conversation-header"><div><span className="eyebrow">Model Context Protocol</span>
       <h1 id="mcp-title">MCP-подключения</h1>
       <p>Серверы и инструменты, обнаруженные через Model Context Protocol.</p></div>
       <UserProfile profile={profile} api={api} disabled={loading} onProfile={onProfile} onLogout={onLogout} />
