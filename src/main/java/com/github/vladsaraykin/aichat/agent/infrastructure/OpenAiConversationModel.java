@@ -100,9 +100,9 @@ public class OpenAiConversationModel implements ConversationModel {
     }
 
     @Override public Flux<StreamPart> stream(AgentDefinition definition, ContextSummary summary,
-                                             List<ChatMessage> messages, String mcpServerId) {
+                                             List<ChatMessage> messages, List<String> mcpServerIds) {
         return streamCall(definition, summary, messages, prompt(definition, summary, messages, true),
-                definition.systemPrompt(), "llm_stream", mcpServerId);
+                definition.systemPrompt(), "llm_stream", mcpServerIds);
     }
 
     @Override public Flux<StreamPart> extractFacts(AgentDefinition definition, List<ChatMessage> messages) {
@@ -144,7 +144,7 @@ public class OpenAiConversationModel implements ConversationModel {
 
     private Flux<StreamPart> streamCall(AgentDefinition definition, ContextSummary summary,
                                         List<ChatMessage> messages, Prompt request,
-                                        String systemPrompt, String operation, String mcpServerId) {
+                                        String systemPrompt, String operation, List<String> mcpServerIds) {
         return Flux.defer(() -> {
             long started = System.nanoTime();
             var text = new StringBuilder();
@@ -154,12 +154,12 @@ public class OpenAiConversationModel implements ConversationModel {
             var cachedPromptTokens = new AtomicInteger();
             var finishReason = new AtomicReference<String>();
             var callbacks = mcpTools == null
-                    ? (mcpServerId == null ? List.<org.springframework.ai.tool.ToolCallback>of()
+                    ? (mcpServerIds == null || mcpServerIds.isEmpty() ? List.<org.springframework.ai.tool.ToolCallback>of()
                             : throwMissingMcpService())
-                    : mcpTools.callbacks(mcpServerId);
-            log.info("{}_started agentId={} model={} contextMessages={} mcpServer={} availableTools={}",
+                    : mcpTools.callbacks(mcpServerIds);
+            log.info("{}_started agentId={} model={} contextMessages={} mcpServers={} availableTools={}",
                     operation, definition.id(), definition.model(), request.getInstructions().size(),
-                    mcpServerId, callbacks.size());
+                    mcpServerIds, callbacks.size());
             Flux<ChatResponse> responses = callbacks.isEmpty() ? model.stream(request)
                     : chatClient.prompt(request).toolCallbacks(callbacks).stream().chatResponse();
             Flux<StreamPart> deltas = responses.map(response -> {

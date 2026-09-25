@@ -46,7 +46,7 @@ public class AgentController {
     }
     public record SendRequest(@NotNull UUID messageId,
                               @NotBlank @Size(max = 12000) String content,
-                              @Size(max = 100) String mcpServerId) {
+                              @Size(max = 8) List<@NotBlank @Size(max = 100) String> mcpServerIds) {
         public SendRequest(UUID messageId, String content) { this(messageId, content, null); }
     }
 
@@ -74,14 +74,14 @@ public class AgentController {
     @PostMapping("/{agentId}/chats/{chatId}/messages")
     public Chat send(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId, @Valid @RequestBody SendRequest request) {
         return service.send(owner(principal), agentId, chatId, request.messageId(), request.content().strip(),
-                normalizedMcp(request.mcpServerId()));
+                normalizedMcp(request.mcpServerIds()));
     }
 
     @PostMapping(value = "/{agentId}/chats/{chatId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<Flux<ServerSentEvent<Object>>> stream(Principal principal, @PathVariable String agentId,
             @PathVariable UUID chatId, @Valid @RequestBody SendRequest request) {
         Flux<ServerSentEvent<Object>> events = service.stream(owner(principal), agentId, chatId, request.messageId(),
-                        request.content().strip(), normalizedMcp(request.mcpServerId()))
+                        request.content().strip(), normalizedMcp(request.mcpServerIds()))
                 .map(event -> ServerSentEvent.builder((Object) event)
                         .event(event.type().name().toLowerCase(Locale.ROOT)).build())
                 .onErrorResume(ChatFailure.class, failure -> Flux.just(ServerSentEvent.builder((Object)
@@ -92,7 +92,7 @@ public class AgentController {
     public ResponseEntity<Flux<ServerSentEvent<Object>>> stream(String agentId, UUID chatId, SendRequest request) {
         return stream(null, agentId, chatId, request);
     }
-    private static String normalizedMcp(String value) {
-        return value == null || value.isBlank() ? null : value.strip();
+    private static List<String> normalizedMcp(List<String> value) {
+        return value == null ? List.of() : value.stream().map(String::strip).distinct().sorted().toList();
     }
 }

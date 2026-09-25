@@ -39,7 +39,7 @@ public interface Agent {
     }
     default Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user,
             List<com.github.vladsaraykin.aichat.agent.domain.LongTermMemory.Entry> entries,
-            com.github.vladsaraykin.aichat.user.domain.UserProfile profile, String mcpServerId) {
+            com.github.vladsaraykin.aichat.user.domain.UserProfile profile, List<String> mcpServerIds) {
         return answerStream(chat, user, entries, profile);
     }
     default Mono<com.github.vladsaraykin.aichat.agent.domain.ContextMemory> updateFacts(

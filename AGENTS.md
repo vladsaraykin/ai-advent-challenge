@@ -5,7 +5,7 @@
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
 - Day 12 adds authenticated user profiles and personalization on top of the Day 11 memory layers. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
-- Day 17 adds opt-in MCP tool execution to the authenticated agent chat. Keep MCP credentials, process configuration and filesystem roots on the backend. Normal chat is the default; the user must explicitly select one connected server for a request.
+- Day 20 adds multi-server MCP orchestration to the authenticated agent chat. Keep MCP credentials, process configuration and filesystem roots on the backend. Normal chat is the default; the user explicitly selects up to eight connected servers for a request. Reject ambiguous tool names and bound tool execution to 24 calls per request.
 
 ## Architecture
 
@@ -16,7 +16,7 @@
 - Context strategy defaults, window sizes, summary/facts prompts and generation limits are server-owned per-agent YAML configuration. Choose the strategy when creating a chat and persist it for that chat.
 - Input, cached-input and output prices are server-owned YAML values and must not be trusted from the browser.
 - An Agent encapsulates context construction, generation and response handling; controllers must not call the provider.
-- Use Spring AI's MCP client for protocol negotiation, discovery and model tool callbacks. Expose tools from only the MCP server selected for the primary answer; never attach tools to summary, extraction or guard calls. A local filesystem MCP process must be restricted to explicit roots and remain separate from persisted chat storage concerns.
+- Use Spring AI's MCP client for protocol negotiation, discovery and model tool callbacks. Expose tools only from the MCP servers selected for the primary answer; never attach tools to summary, extraction or guard calls. Each callback routes to its originating server. A local filesystem MCP process must be restricted to explicit roots and remain separate from persisted chat storage concerns.
 - Encapsulate retention and memory preparation in ContextStrategy implementations. Build provider context only from the selected chat or branch.
 - Summary retains recent messages plus cumulative summary; Sliding Window sends only recent complete turns but preserves the full conversation in storage and UI; Sticky Facts preserves the full conversation, updates key-value memory from recent complete turns, and sends facts plus those turns; Branching retains checkpoint history plus its own continuation.
 - Keep Sliding Window and Sticky Facts provider contexts separate from persisted history. Never save their truncated provider views or archive usage for messages that remain in full history.

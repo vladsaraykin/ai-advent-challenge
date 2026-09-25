@@ -26,7 +26,7 @@ export default function McpCatalog({ api, profile, onProfile, onLogout, servers 
     </header>
     <div className="mcp-content">
       <div className="mcp-intro"><div><strong>{servers.filter(server => server.connected).length}</strong><span>активных подключений</span></div>
-        <p>Приложение выполняет MCP handshake и запрашивает <code>tools/list</code>. В чате можно явно выбрать один сервер и разрешить модели вызвать его инструменты.</p></div>
+        <p>Приложение выполняет MCP handshake и запрашивает <code>tools/list</code>. В чате можно выбрать несколько серверов: модель сможет использовать их инструменты в одном запросе.</p></div>
       {loading && <div className="loading-state" role="status">Подключаемся к MCP-серверам и загружаем инструменты…</div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span>
         <button type="button" onClick={onReload}>Повторить</button></div>}

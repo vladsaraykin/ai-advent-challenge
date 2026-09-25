@@ -38,6 +38,32 @@ const makeApi = () => ({
 beforeEach(() => localStorage.clear())
 
 describe('agent conversations', () => {
+  it('sends tools from multiple selected servers and retains selection for retry', async () => {
+    const api = makeApi()
+    api.mcpServers.mockResolvedValue(['expenses', 'filesystem', 'other'].map(id => ({
+      id, name: id, connected: true, tools: [{ name: id + '_tool' }]
+    })))
+    api.sendStream.mockRejectedValueOnce(new Error('Временная ошибка'))
+    render(<App api={api} />)
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Разрешить агенту MCP-инструменты' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /expenses/ }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /filesystem/ }))
+    await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Сохрани отчёт')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    await screen.findByText('Временная ошибка')
+    const first = api.sendStream.mock.calls[0][2]
+    expect(first.mcpServerIds).toEqual(['expenses', 'filesystem'])
+    expect(screen.getByRole('checkbox', { name: /other/ })).not.toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    await screen.findByText('Ответ агента')
+    expect(api.sendStream.mock.calls[1][2]).toEqual(first)
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Разрешить агенту MCP-инструменты' }))
+    await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Привет')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    await waitFor(() => expect(api.sendStream).toHaveBeenCalledTimes(3))
+    expect(api.sendStream.mock.calls[2][2].mcpServerIds).toEqual([])
+  })
+
   it('shows connected MCP servers and their discovered tools in a separate authenticated tab', async () => {
     const api = makeApi()
     api.mcpServers.mockResolvedValue([{
@@ -77,13 +103,13 @@ describe('agent conversations', () => {
     const toggle = await screen.findByRole('checkbox', { name: 'Разрешить агенту MCP-инструменты' })
     expect(toggle).not.toBeChecked()
     await userEvent.click(toggle)
-    expect(screen.getByLabelText('Сервер MCP')).toHaveValue('custom-tools')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Custom MCP/ }))
     await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Найди заказ 42')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
 
     expect(await screen.findByText('Модель выбирает и выполняет MCP-инструменты…')).toBeInTheDocument()
     expect(api.sendStream.mock.calls[0][2]).toEqual(expect.objectContaining({
-      content: 'Найди заказ 42', mcpServerId: 'custom-tools'
+      content: 'Найди заказ 42', mcpServerIds: ['custom-tools']
     }))
     finish()
     await screen.findByText('Ответ агента')

@@ -113,3 +113,10 @@
 .profile-actions button { padding: 10px 14px; border: 1px solid #c4d1ce; border-radius: 8px; background: white; }
 .logout-button { color: #9b3f31; }
 @media (max-width: 640px) { .auth-card, .profile-dialog { padding: 22px; } .conversation-header { align-items: flex-start; } .header-actions { flex-direction: column-reverse; align-items: flex-end; } .profile-chip strong { display: none; } }
+:root .report-downloads { flex-shrink: 0; margin: 8px 20px; padding: 10px 14px; border: 1px solid #dce3e8; border-radius: 12px; }
+.report-downloads summary { cursor: pointer; font-weight: 600; }
+.report-downloads p { font-size: 12px; }
+.report-downloads ul { max-height: 180px; overflow: auto; padding: 0; list-style: none; }
+.report-downloads li { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; }
+.report-downloads li span { overflow-wrap: anywhere; min-width: 0; }
+.report-downloads button { flex-shrink: 0; }

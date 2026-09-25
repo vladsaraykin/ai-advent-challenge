@@ -12,6 +12,7 @@ import InvariantPanel from './components/InvariantPanel'
 import AuthScreen from './components/AuthScreen'
 import UserProfile from './components/UserProfile'
 import McpCatalog from './components/McpCatalog'
+import ReportDownloads from './components/ReportDownloads'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
 const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
@@ -42,7 +43,7 @@ export default function App({ api = agentApi }) {
   const [mcpLoading, setMcpLoading] = useState(false)
   const [mcpError, setMcpError] = useState('')
   const [mcpEnabled, setMcpEnabled] = useState(false)
-  const [mcpServerId, setMcpServerId] = useState('')
+  const [mcpServerIds, setMcpServerIds] = useState([])
   const retry = useRef(null)
   const busyRef = useRef(false)
   const deleteTrigger = useRef(null)
@@ -89,7 +90,7 @@ export default function App({ api = agentApi }) {
       if (!active) return
       setMcpServers(items)
       const available = items.filter(item => item.connected && !item.error && item.tools?.length)
-      setMcpServerId(current => available.some(item => item.id === current) ? current : (available[0]?.id || ''))
+      setMcpServerIds(current => current.filter(id => available.some(item => item.id === id)))
       if (!available.length) setMcpEnabled(false)
     }).catch(exception => { if (active) { setMcpServers([]); setMcpError(exception.message); setMcpEnabled(false) } })
       .finally(() => { if (active) setMcpLoading(false) })
@@ -185,8 +186,8 @@ export default function App({ api = agentApi }) {
     if (busyRef.current || loading || !agent) return
     const content = draft.trim()
     if (!content) { setError('Введите сообщение'); return }
-    if (mcpEnabled && !mcpServerId) { setError('Выберите доступный MCP-сервер'); return }
-    const selectedMcp = mcpEnabled ? mcpServerId : null
+    if (mcpEnabled && !mcpServerIds.length) { setError('Выберите хотя бы один MCP-сервер'); return }
+    const selectedMcp = mcpEnabled ? [...mcpServerIds].sort() : []
     busyRef.current = true; setPending(true); setStreamedAnswer(''); setStreamPhase('connecting')
     setPendingMessage(content)
     setError(''); setNotice('')
@@ -196,12 +197,12 @@ export default function App({ api = agentApi }) {
       const key = `${agentId}/${current.id}`
       setDrafts(values => ({ ...values, [draftKey]: '', [key]: '' }))
       if (!retry.current || retry.current.chatId !== current.id || retry.current.content !== content
-          || retry.current.mcpServerId !== selectedMcp) {
-        retry.current = { chatId: current.id, content, mcpServerId: selectedMcp, messageId: newMessageId() }
+          || JSON.stringify(retry.current.mcpServerIds) !== JSON.stringify(selectedMcp)) {
+        retry.current = { chatId: current.id, content, mcpServerIds: selectedMcp, messageId: newMessageId() }
       }
       let completed
       await api.sendStream(agentId, current.id, {
-        messageId: retry.current.messageId, content, mcpServerId: retry.current.mcpServerId
+        messageId: retry.current.messageId, content, mcpServerIds: retry.current.mcpServerIds
       }, {
         updating_memory: () => setStreamPhase('updating_memory'),
         syncing_questions: () => setStreamPhase('syncing_questions'),
@@ -234,7 +235,7 @@ export default function App({ api = agentApi }) {
 
   function logout() {
     api.clearCredentials(); setProfile(null); setAgents([]); setAgentId(''); setChats([]); setChat(null)
-    setMcpEnabled(false); setMcpServerId(''); setMcpServers([])
+    setMcpEnabled(false); setMcpServerIds([]); setMcpServers([])
     setError(''); setNotice(''); retry.current = null
   }
 
@@ -261,13 +262,14 @@ export default function App({ api = agentApi }) {
         : <MessageList messages={chat?.messages || []} agent={agent} pending={pending} pendingMessage={pendingMessage}
           streamedAnswer={streamedAnswer} streamPhase={streamPhase} />}
       {notice && <div className="notice-banner" role="status">{notice}</div>}
+      <ReportDownloads key={profile?.username} api={api} refreshKey={chat?.updatedAt} />
       {error && <div className="error-banner" role="alert"><span>{error}</span>
         {!pending && <button type="button" onClick={() => { setError(''); setReload(value => value + 1) }}>Обновить</button>}</div>}
       <MessageComposer draft={draft} onChange={value => setDrafts(current => ({ ...current, [draftKey]: value }))}
         onSubmit={send} pending={pending} disabled={loading || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy}
         mcpServers={mcpServers.filter(item => item.connected && !item.error && item.tools?.length)}
-        mcpEnabled={mcpEnabled} mcpServerId={mcpServerId}
-        onMcpEnabled={setMcpEnabled} onMcpServer={setMcpServerId} />
+        mcpEnabled={mcpEnabled} mcpServerIds={mcpServerIds}
+        onMcpEnabled={setMcpEnabled} onMcpServer={setMcpServerIds} />
       <p className="context-note">{agent?.memoryLayers
         ? 'История и задача изолированы по чатам и веткам. Профиль и подтверждённая долговременная память принадлежат текущему пользователю.'
         : 'Контекст и история изолированы по пользователям, чатам и веткам. Активный профиль применяется автоматически.'}</p>

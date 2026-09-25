@@ -1,17 +1,21 @@
 export default function MessageComposer({ draft, onChange, onSubmit, pending, disabled, mcpServers = [],
-  mcpEnabled = false, mcpServerId = '', onMcpEnabled = () => {}, onMcpServer = () => {} }) {
+  mcpEnabled = false, mcpServerIds = [], onMcpEnabled = () => {}, onMcpServer = () => {} }) {
   return <form className="composer" onSubmit={onSubmit}>
     <div className="mcp-composer-controls">
       <label className="mcp-toggle"><input type="checkbox" checked={mcpEnabled}
         disabled={pending || disabled || !mcpServers.length}
         onChange={event => onMcpEnabled(event.target.checked)} />
         Разрешить агенту MCP-инструменты</label>
-      {mcpEnabled && <label>Сервер MCP<select aria-label="Сервер MCP" value={mcpServerId}
-        disabled={pending || disabled} onChange={event => onMcpServer(event.target.value)}>
-        {mcpServers.map(server => <option value={server.id} key={server.id}>
+      {mcpEnabled && <fieldset disabled={pending || disabled}>
+        <legend>Серверы MCP — выберите до 8</legend>
+        {mcpServers.map(server => <label key={server.id} className="mcp-toggle">
+          <input type="checkbox" checked={mcpServerIds.includes(server.id)}
+            disabled={!mcpServerIds.includes(server.id) && mcpServerIds.length >= 8}
+            onChange={event => onMcpServer(event.target.checked
+              ? [...mcpServerIds, server.id] : mcpServerIds.filter(id => id !== server.id))} />
           {server.name} · {server.tools.length} инстр.
-        </option>)}
-      </select></label>}
+        </label>)}
+      </fieldset>}
       {!mcpServers.length && <small>MCP-серверы с инструментами не подключены</small>}
     </div>
     <label htmlFor="message">Ваше сообщение</label>

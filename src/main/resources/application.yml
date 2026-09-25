@@ -19,6 +19,15 @@ spring:
               args:
                 - ${MCP_FILESYSTEM_ENTRYPOINT:mcp/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js}
                 - ${MCP_FILESYSTEM_ROOT:.}
+            excel:
+              command: ${MCP_EXCEL_COMMAND:uv}
+              args:
+                - --directory
+                - ${MCP_EXCEL_DIRECTORY:../excel-mcp}
+                - run
+                - --frozen
+                - --no-sync
+                - excel-mcp
         streamable-http:
           connections:
             expenses:
@@ -32,6 +41,8 @@ spring:
           model: ${OPENAI_MODEL:gpt-4.1-mini}
 
 app:
+  reports:
+    directory: ${REPORTS_DIRECTORY:../share/reports}
   agents:
     location: ${AGENT_CONFIG_LOCATION:classpath:agents/*.yaml}
   chats:

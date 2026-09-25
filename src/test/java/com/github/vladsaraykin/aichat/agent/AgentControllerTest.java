@@ -17,6 +17,34 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AgentControllerTest {
     @TempDir Path directory;
+    @Test void forwardsMultipleMcpServersAndRejectsInvalidSelections() throws Exception {
+        var selected = new java.util.concurrent.atomic.AtomicReference<java.util.List<String>>();
+        ConversationModel model = new ConversationModel() {
+            @Override public Reply reply(AgentDefinition definition, java.util.List<ChatMessage> messages) {
+                return new Reply("ok", new ChatMessage.Metrics(definition.model(), 1, 1, 0, 0,
+                        1, 0, 1, 2, null, null, null, "stop"));
+            }
+            @Override public reactor.core.publisher.Flux<StreamPart> stream(AgentDefinition definition,
+                    ContextSummary summary, java.util.List<ChatMessage> messages, java.util.List<String> servers) {
+                selected.set(servers);
+                return reactor.core.publisher.Flux.just(StreamPart.completed(reply(definition, messages)));
+            }
+        };
+        var service = new ChatService(LegacyAgents.catalog(model), new FileChatRepository(directory.toString()));
+        var mvc = MockMvcBuilders.standaloneSetup(new AgentController(service))
+                .setControllerAdvice(new ChatExceptionHandler()).build();
+        var chat = service.create("chef");
+        String path = "/api/agents/chef/chats/" + chat.id() + "/messages";
+        mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("""
+                {"messageId":"%s","content":"Отчёт","mcpServerIds":["filesystem","expenses","expenses"]}
+                """.formatted(UUID.randomUUID()))).andExpect(status().isOk());
+        assertThat(selected.get()).containsExactly("expenses", "filesystem");
+        for (String ids : java.util.List.of("[null]", "[\" \" ]", "[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\"]")) {
+            mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("""
+                    {"messageId":"%s","content":"Отчёт","mcpServerIds":%s}
+                    """.formatted(UUID.randomUUID(), ids))).andExpect(status().isBadRequest());
+        }
+    }
     @Test void servesAgentsAndValidatesRequestsAndChatOwnership() throws Exception {
         var registry = LegacyAgents.catalog((definition, messages) -> new ConversationModel.Reply("ok",
                 new ChatMessage.Metrics(definition.model(), 12, 2, 0, 3, 5, 0, 5, 10,
@@ -27,9 +55,10 @@ class AgentControllerTest {
         var mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new ChatExceptionHandler()).build();
         mvc.perform(get("/api/agents")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$.length()").value(4))
                 .andExpect(jsonPath("$[0].id").value("architect"))
-                .andExpect(jsonPath("$[2].id").value("techno"))
+                .andExpect(jsonPath("$[1].id").value("assistant"))
+                .andExpect(jsonPath("$[3].id").value("techno"))
                 .andExpect(jsonPath("$[0].contextCompression").value(true))
                 .andExpect(jsonPath("$[0].recentMessages").value(10))
                 .andExpect(jsonPath("$[0].summaryBatchSize").value(10))
