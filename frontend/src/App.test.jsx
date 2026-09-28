@@ -38,6 +38,19 @@ const makeApi = () => ({
 beforeEach(() => localStorage.clear())
 
 describe('agent conversations', () => {
+  it('opens RAG as the third tab without creating a chat or starting indexing', async () => {
+    const api = makeApi()
+    api.ragDocuments = vi.fn().mockResolvedValue([])
+    render(<App api={api} />)
+    await screen.findByRole('heading', { name: 'Архитектор ПО' })
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Агенты', 'MCP', 'RAG'])
+    await userEvent.click(screen.getByRole('tab', { name: 'RAG' }))
+    expect(await screen.findByRole('heading', { name: 'Лаборатория RAG' })).toBeInTheDocument()
+    expect(await screen.findByText(/Загрузите первый документ/)).toBeInTheDocument()
+    expect(api.create).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('tab', { name: 'Агенты' }))
+    expect(screen.getByRole('heading', { name: 'Архитектор ПО' })).toBeInTheDocument()
+  })
   it('sends tools from multiple selected servers and retains selection for retry', async () => {
     const api = makeApi()
     api.mcpServers.mockResolvedValue(['expenses', 'filesystem', 'other'].map(id => ({

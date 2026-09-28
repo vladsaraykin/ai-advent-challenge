@@ -9,12 +9,14 @@ export default function ChatSidebar({ agents, agentId, chats, chatId, disabled, 
   chats.filter(chat => !chat.parentChatId || !chats.some(item => item.id === chat.parentChatId))
     .forEach(chat => visit(chat, 0))
   return <aside className="sidebar">
-      <a className="brand" href="/">AI Advent<span>Агенты и MCP</span></a>
+      <a className="brand" href="/">AI Advent<span>Агенты · MCP · RAG</span></a>
     <div className="product-nav" role="tablist" aria-label="Разделы приложения">
       <button type="button" role="tab" aria-selected={activeView === 'chat'} className={activeView === 'chat' ? 'selected' : ''}
         onClick={() => onView('chat')}>Агенты</button>
       <button type="button" role="tab" aria-selected={activeView === 'mcp'} className={activeView === 'mcp' ? 'selected' : ''}
         onClick={() => onView('mcp')}>MCP</button>
+      <button type="button" role="tab" aria-selected={activeView === 'rag'} className={activeView === 'rag' ? 'selected' : ''}
+        onClick={() => onView('rag')}>RAG</button>
     </div>
     {activeView === 'chat' && <>
     <label className="agent-select">Ваш помощник

@@ -12,6 +12,21 @@ const encodedStream = chunks => new ReadableStream({
 afterEach(() => { vi.unstubAllGlobals(); agentApi.clearCredentials() })
 
 describe('SSE chat API', () => {
+  it('uploads RAG multipart without overriding boundary and authenticates indexing requests', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
+    vi.stubGlobal('fetch', fetch)
+    agentApi.setCredentials('alice', 'secret-123')
+    const file = new File(['text'], 'example.docx')
+    await agentApi.uploadRagDocument(file)
+    expect(fetch.mock.calls[0][0]).toBe('/api/rag/documents')
+    expect(fetch.mock.calls[0][1].body.get('file')).toBe(file)
+    expect(fetch.mock.calls[0][1].headers['Content-Type']).toBeUndefined()
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe(`Basic ${btoa('alice:secret-123')}`)
+    await agentApi.startRagIndex('doc', 'STRUCTURAL')
+    expect(fetch.mock.calls[1][1].body).toBe('{"strategy":"STRUCTURAL"}')
+    await agentApi.ragChunks('run', 10)
+    expect(fetch.mock.calls[2][0]).toBe('/api/rag/indexes/run/chunks?limit=10&offset=10')
+  })
   it('uses authentication and encoded filenames for downloads and reports server errors', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: 'Отчёт не найден' }), {
       status: 404, headers: { 'Content-Type': 'application/json' }

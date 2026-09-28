@@ -12,6 +12,7 @@ import InvariantPanel from './components/InvariantPanel'
 import AuthScreen from './components/AuthScreen'
 import UserProfile from './components/UserProfile'
 import McpCatalog from './components/McpCatalog'
+import RagDocuments from './components/RagDocuments'
 import ReportDownloads from './components/ReportDownloads'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
@@ -246,7 +247,8 @@ export default function App({ api = agentApi }) {
       onCreate={createChat} onDelete={(target, trigger) => { deleteTrigger.current = trigger; setDeleteTarget(target) }} />
     {activeView === 'mcp' ? <McpCatalog servers={mcpServers} loading={mcpLoading} error={mcpError}
       onReload={() => setReload(value => value + 1)} profile={profile} api={api}
-      onProfile={setProfile} onLogout={logout} /> : <>
+      onProfile={setProfile} onLogout={logout} /> : activeView === 'rag' ?
+      <RagDocuments key={profile.username} api={api} profile={profile} onProfile={setProfile} onLogout={logout} /> : <>
     <div className={`agent-workspace ${chat ? 'with-inspector' : ''}`}>
     <section className="conversation" aria-label="Диалог с агентом">
       <header className="conversation-header"><div><h1>{agent?.name || 'Мои агенты'}</h1>

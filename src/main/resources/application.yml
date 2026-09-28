@@ -1,4 +1,9 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+      file-size-threshold: 0
   application:
     name: ai-advent-challenge
   ai:
@@ -41,6 +46,24 @@ spring:
           model: ${OPENAI_MODEL:gpt-4.1-mini}
 
 app:
+  rag:
+    enabled: ${RAG_ENABLED:false}
+    documents-directory: ${RAG_DOCUMENTS_DIRECTORY:data/rag-documents}
+    chunking:
+      max-estimated-tokens: ${RAG_CHUNK_MAX_ESTIMATED_TOKENS:384}
+      overlap-estimated-tokens: ${RAG_CHUNK_OVERLAP_ESTIMATED_TOKENS:64}
+    database:
+      url: ${RAG_DATABASE_URL:jdbc:postgresql://127.0.0.1:15432/ai_advent_rag}
+      username: ${RAG_DATABASE_USERNAME:ai_advent_rag}
+      password: ${RAG_DATABASE_PASSWORD:}
+      maximum-pool-size: ${RAG_DATABASE_POOL_SIZE:3}
+      connection-timeout: 5s
+    ollama:
+      base-url: ${RAG_OLLAMA_BASE_URL:http://127.0.0.1:11435}
+      model: ${RAG_EMBEDDING_MODEL:embeddinggemma}
+      dimensions: 768
+      connect-timeout: 5s
+      request-timeout: 120s
   reports:
     directory: ${REPORTS_DIRECTORY:../share/reports}
   agents:
@@ -59,4 +82,6 @@ logging:
   pattern:
     level: "%5p [requestId=%X{requestId} chatId=%X{chatId}]"
   level:
+    org.apache.pdfbox: "OFF"
+    org.apache.poi: "OFF"
     io.modelcontextprotocol.client.transport.StdioClientTransport: WARN

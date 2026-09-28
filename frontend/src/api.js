@@ -74,6 +74,19 @@ export const agentApi = {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }),
   mcpServers: () => rawRequest('/api/mcp/servers'),
+  ragDocuments: (offset = 0, signal) => rawRequest(`/api/rag/documents?limit=20&offset=${offset}`, { signal }),
+  ragDocument: (id, signal) => rawRequest(`/api/rag/documents/${encodeURIComponent(id)}`, { signal }),
+  uploadRagDocument: (file, signal) => {
+    const body = new FormData()
+    body.append('file', file)
+    return rawRequest('/api/rag/documents', { method: 'POST', body, signal })
+  },
+  ragPreview: (id, signal) => rawRequest(`/api/rag/documents/${encodeURIComponent(id)}/chunking?limit=3`, { signal }),
+  ragIndexes: (id, signal) => rawRequest(`/api/rag/documents/${encodeURIComponent(id)}/indexes`, { signal }),
+  startRagIndex: (id, strategy, signal) => rawRequest(`/api/rag/documents/${encodeURIComponent(id)}/indexes`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy }), signal
+  }),
+  ragChunks: (id, offset = 0, signal) => rawRequest(`/api/rag/indexes/${encodeURIComponent(id)}/chunks?limit=10&offset=${offset}`, { signal }),
   reports: () => rawRequest('/api/reports'),
   downloadReport: async name => {
     const response = await fetch('/api/reports/download?' + new URLSearchParams({ name }), {
