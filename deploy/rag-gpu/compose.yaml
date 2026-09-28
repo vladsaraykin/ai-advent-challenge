@@ -1,0 +1,64 @@
+name: ai-advent-rag-gpu
+
+services:
+  ollama:
+    image: ollama/ollama:0.34.4
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-127.0.0.1}:11434:11434"
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "30m"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional NEW database. Existing cloudvm data is not migrated automatically.
+  postgres:
+    profiles: [database]
+    image: pgvector/pgvector:0.8.6-pg16-trixie
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-127.0.0.1}:5432:5432"
+    environment:
+      POSTGRES_DB: ai_advent_rag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
+      RAG_DATABASE_PASSWORD: "${RAG_DATABASE_PASSWORD:-}"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/10-rag.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_advent_rag"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  ollama_data:
+  postgres_data:
