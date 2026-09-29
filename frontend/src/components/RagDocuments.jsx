@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import UserProfile from './UserProfile'
 import RagIndexCard from './RagIndexCard'
+import RagQuestions from './RagQuestions'
 import { strategyLabels, activeRun, number } from './ragUtils'
 import './rag.css'
 
@@ -178,6 +179,7 @@ function DocumentWorkspace({ api, id }) {
       api={api} strategy={strategy} runs={runs.filter(run => run.strategy === strategy)}
       disabled={!document || !!starting || runsLoading || !!runError} starting={starting === strategy} onStart={() => start(strategy)} />)}</div>
     <p className="rag-note">Готовым считается только COMPLETED-индекс. Токены включают успешно сохранённые эмбеддинги.
-      Оценку качества вы выполняете самостоятельно; поиск и ответы по документам пока не подключены.</p>
+      Оценку качества вы выполняете самостоятельно.</p>
+    {api.ragAnswerSettings && <RagQuestions api={api} indexes={runs.filter(run => run.status === 'COMPLETED')} />}
   </div>
 }

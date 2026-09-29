@@ -15,8 +15,8 @@ async function rawRequest(path, options = {}) {
 async function request(path, options = {}) { return rawRequest('/api/agents' + path, options) }
 const chatPath = (agentId, chatId) => `/${encodeURIComponent(agentId)}/chats/${encodeURIComponent(chatId)}`
 
-async function stream(path, body, handlers = {}) {
-  const response = await fetch('/api/agents' + path, {
+async function stream(path, body, handlers = {}, prefix = '/api/agents') {
+  const response = await fetch(prefix + path, {
     method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
     body: JSON.stringify(body), signal: handlers.signal
   })
@@ -74,6 +74,9 @@ export const agentApi = {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }),
   mcpServers: () => rawRequest('/api/mcp/servers'),
+  ragAnswerSettings: signal => rawRequest('/api/rag/answer-settings', { signal }),
+  ragQuestions: (id, signal) => rawRequest(`/api/rag/indexes/${encodeURIComponent(id)}/questions`, { signal }),
+  askRag: (body, handlers) => stream('/questions/stream', body, handlers, '/api/rag'),
   ragDocuments: (offset = 0, signal) => rawRequest(`/api/rag/documents?limit=20&offset=${offset}`, { signal }),
   ragDocument: (id, signal) => rawRequest(`/api/rag/documents/${encodeURIComponent(id)}`, { signal }),
   uploadRagDocument: (file, signal) => {

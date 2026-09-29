@@ -21,6 +21,50 @@ import static org.assertj.core.api.Assertions.*;
 class RagPostgresTest {
     @TempDir Path directory;
 
+    @Test void cosineSearchAndQuestionPersistenceAreOwnerAndIndexScoped() {
+        var ds = new DriverManagerDataSource(System.getenv("RAG_TEST_DATABASE_URL"),
+                System.getenv("RAG_TEST_DATABASE_USERNAME"), System.getenv("RAG_TEST_DATABASE_PASSWORD"));
+        var config = new RagConfiguration(); config.ragFlyway(ds).migrate();
+        var jdbc = new JdbcTemplate(ds);
+        var indexes = new JdbcIndexRepository(jdbc, config.ragTransactions(ds));
+        var questions = new JdbcRagQuestionRepository(jdbc);
+        String owner = "test-" + UUID.randomUUID();
+        var document = new RagDocument(UUID.randomUUID(), owner, "test.pdf", "application/pdf", UUID.randomUUID(), 1,
+                "c".repeat(64), new ExtractedText("ab", new ExtractedText.Metadata("pdf",1,List.of(),List.of())),Instant.now());
+        new JdbcDocumentRepository(jdbc).insert(document);
+        try {
+            var id = indexes.create(document,DocumentChunk.Strategy.FIXED_SIZE,new ChunkingSettings(384,64),"embeddinggemma");
+            var first = new DocumentChunk(UUID.randomUUID(),0,"test.pdf","test.pdf","section",1,1,0,1,"a",1);
+            var second = new DocumentChunk(UUID.randomUUID(),1,"test.pdf","test.pdf","section",1,1,1,2,"b",1);
+            indexes.prepare(owner,id,List.of(first,second));
+            var x = new float[768]; x[0]=1;
+            var y = new float[768]; y[1]=1;
+            indexes.saveEmbedding(owner,id,0,new com.github.vladsaraykin.aichat.rag.application.EmbeddingModel.Result(x,1L));
+            indexes.saveEmbedding(owner,id,1,new com.github.vladsaraykin.aichat.rag.application.EmbeddingModel.Result(y,1L));
+            assertThat(questions.search(owner,id,x,5)).isEmpty();
+            indexes.finish(owner,id,1,null);
+            var sources = questions.search(owner,id,x,2);
+            assertThat(sources).hasSize(2);
+            assertThat(sources.getFirst().chunk().content()).isEqualTo("a");
+            assertThat(sources.getFirst().similarity()).isCloseTo(1,within(.0001));
+            assertThat(sources.getLast().similarity()).isCloseTo(0,within(.0001));
+            assertThat(questions.search("other",id,x,2)).isEmpty();
+            assertThat(questions.search(owner,UUID.randomUUID(),x,2)).isEmpty();
+            var q = new RagQuestion(UUID.randomUUID(),id,"question",RagQuestion.Mode.BOTH,"RUNNING",List.of(),Instant.now());
+            assertThat(questions.create(owner,q)).isTrue();
+            assertThat(questions.create(owner,q)).isFalse();
+            assertThat(questions.find("other",q.id())).isEmpty();
+            var answer = new RagQuestion.Answer(RagQuestion.Mode.WITH_RAG,"answer [1]",sources,null,null);
+            var done = new RagQuestion(q.id(),id,"question",q.mode(),"COMPLETED",List.of(answer),q.createdAt());
+            questions.save(owner,done);
+            assertThat(new JdbcRagQuestionRepository(jdbc).find(owner,q.id())).contains(done);
+            questions.recoverInterrupted();
+            assertThat(questions.find(owner,q.id())).contains(done);
+            questions.save(owner,q); questions.recoverInterrupted();
+            assertThat(questions.find(owner,q.id()).orElseThrow().status()).isEqualTo("INTERRUPTED");
+        } finally { jdbc.update("DELETE FROM rag.documents WHERE owner_username=? AND id=?",owner,document.id()); }
+    }
+
     @Test void indexesPersistVectorsProgressRetryIsolationAndRestartRecovery() {
         var dataSource = new DriverManagerDataSource(System.getenv("RAG_TEST_DATABASE_URL"),
                 System.getenv("RAG_TEST_DATABASE_USERNAME"), System.getenv("RAG_TEST_DATABASE_PASSWORD"));

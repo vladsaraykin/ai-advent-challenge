@@ -1,0 +1,157 @@
+import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { newMessageId } from '../messageId'
+import { number, strategyLabels } from './ragUtils'
+
+const labels = { WITHOUT_RAG: 'Без RAG', WITH_RAG: 'С RAG', BOTH: 'Оба ответа' }
+
+// Turn citations in prose (not code or existing links) into local references.
+function citationPlugin() {
+  return tree => {
+    function walk(node) {
+      if (!node.children || ['link', 'code', 'inlineCode'].includes(node.type)) return
+      node.children = node.children.flatMap(child => {
+        if (child.type !== 'text') { walk(child); return [child] }
+        const parts = []; let end = 0
+        for (const match of child.value.matchAll(/\[(\d+)\]/g)) {
+          parts.push({ type: 'text', value: child.value.slice(end, match.index) },
+            { type: 'link', url: `#source-${match[1]}`, children: [{ type: 'text', value: match[0] }] })
+          end = match.index + match[0].length
+        }
+        parts.push({ type: 'text', value: child.value.slice(end) }); return parts
+      })
+    }
+    walk(tree)
+  }
+}
+
+export default function RagQuestions({ api, indexes }) {
+  const [chosen, setChosen] = useState('')
+  const index = indexes.find(item => item.id === chosen) || indexes[0]
+  const [settings, setSettings] = useState(null)
+  const [question, setQuestion] = useState('')
+  const [mode, setMode] = useState('BOTH')
+  const [history, setHistory] = useState([])
+  const [selected, setSelected] = useState('')
+  const [current, setCurrent] = useState(null)
+  const [pending, setPending] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [revision, setRevision] = useState(0)
+  const stream = useRef(null)
+  const busy = useRef(false)
+  useEffect(() => () => stream.current?.abort(), [])
+  useEffect(() => {
+    const controller = new AbortController()
+    api.ragAnswerSettings(controller.signal).then(value => { if (!controller.signal.aborted) setSettings(value) })
+      .catch(error => { if (!controller.signal.aborted) setError(error.message) })
+    return () => controller.abort()
+  }, [api, revision])
+  useEffect(() => {
+    setHistory([]); setSelected(''); setCurrent(null)
+    if (!index) return
+    const controller = new AbortController(); setLoading(true)
+    api.ragQuestions(index.id, controller.signal).then(values => { if (!controller.signal.aborted) setHistory(values) })
+      .catch(error => { if (!controller.signal.aborted) setError(error.message) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [api, index?.id, revision])
+
+  async function ask(event) {
+    event.preventDefault()
+    if (busy.current || !index || !question.trim()) return
+    busy.current = true; setChosen(index.id); setPending(true); setError(''); setSelected('')
+    const controller = new AbortController(); stream.current = controller
+    const request = { id: newMessageId(), indexId: index.id, question: question.trim(), mode }
+    const modes = mode === 'BOTH' ? ['WITHOUT_RAG', 'WITH_RAG'] : [mode]
+    setCurrent({ ...request, answers: modes.map(mode => ({ mode, text: '', sources: [], phase: 'Ожидание', metrics: null })) })
+    function update(mode, patch) {
+      if (!controller.signal.aborted) setCurrent(value => ({ ...value, answers: value.answers.map(answer => answer.mode === mode ? patch(answer) : answer) }))
+    }
+    let completed = false
+    try {
+      await api.askRag(request, {
+        signal: controller.signal,
+        phase: value => update(value.mode, answer => ({ ...answer, phase: value.phase })),
+        sources: value => update(value.mode, answer => ({ ...answer, sources: value.sources })),
+        delta: value => update(value.mode, answer => ({ ...answer, text: answer.text + value.text })),
+        answer: value => update(value.mode, () => value),
+        completed: value => {
+          completed = true
+          if (!controller.signal.aborted) { setCurrent(value); setHistory(values => [value, ...values.filter(item => item.id !== value.id)]) }
+        }
+      })
+      if (!completed && !controller.signal.aborted) throw new Error('Поток прерван. Обновите историю перед повторной отправкой.')
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setError(error.message)
+        setCurrent(value => ({ ...value, answers: value.answers.map(answer => answer.metrics || answer.error ? answer
+          : { ...answer, text: '', phase: '', error: 'Ответ не завершён. Частичный текст не сохранён.' }) }))
+      }
+    } finally { busy.current = false; if (!controller.signal.aborted) setPending(false) }
+  }
+
+  const displayed = selected ? history.find(item => item.id === selected) : current
+  return <section className="rag-panel rag-questions" aria-labelledby="rag-questions-title">
+    <span className="eyebrow">День 22 · Первый RAG-запрос</span><h2 id="rag-questions-title">Вопрос к документу</h2>
+    <p>Каждый вопрос независим. Одна модель и одинаковые параметры, но в режиме RAG добавляются найденные источники.</p>
+    <p>{settings?.model || 'Модель не настроена'} · top-K {settings?.topK ?? '—'} · лимит ответа {settings?.maxCompletionTokens ?? '—'} токенов</p>
+    {!index && <p role="status">Сначала завершите индексацию документа.</p>}
+    <form onSubmit={ask}>
+      <label>Индекс для вопроса<select value={index?.id || ''} disabled={pending || !indexes.length} onChange={event => setChosen(event.target.value)}>
+        {!indexes.length && <option value="">Нет завершённых индексов</option>}
+        {indexes.map(item => <option key={item.id} value={item.id}>{strategyLabels[item.strategy]} · {new Date(item.createdAt).toLocaleString('ru-RU')} · {item.id.slice(0, 8)}</option>)}
+      </select></label>
+      <label>Режим ответа<select value={mode} disabled={pending} onChange={event => setMode(event.target.value)}>
+        {Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+      </select></label>
+      <label>Ваш вопрос<textarea rows={3} maxLength={4000} value={question} disabled={pending} onChange={event => setQuestion(event.target.value)} required /></label>
+      <button className="rag-primary" disabled={pending || loading || !index || !settings?.model || !question.trim()}>
+        {pending ? 'Получаем ответ…' : mode === 'BOTH' ? 'Получить оба ответа' : 'Получить ответ'}</button>
+      <p className="rag-note">Вопрос и выбранные чанки отправляются вашему LLM-провайдеру. «Оба ответа» — два платных вызова, последовательно. Переключение документа/вкладки прервёт отображение потока; проверьте историю перед повтором.</p>
+    </form>
+    {error && <div role="alert" className="rag-failure">{error}</div>}
+    <div className="rag-question-history"><button disabled={pending} onClick={() => { setError(''); setRevision(value => value + 1) }}>Обновить историю ответов</button>
+      <label>Сохранённые вопросы<select disabled={pending || loading} value={selected} onChange={event => setSelected(event.target.value)}>
+        <option value="">Текущий результат</option>{history.map(item => <option key={item.id} value={item.id}>{item.question.slice(0, 80)} · {item.status}</option>)}
+      </select></label></div>
+    {loading && <p role="status">Загружаем историю ответов…</p>}
+    {displayed && <><blockquote className="rag-question-text">{displayed.question}</blockquote>
+      {['INTERRUPTED', 'RUNNING'].includes(displayed.status) && <p role="status">Запрос {displayed.status === 'INTERRUPTED' ? 'прерван' : 'ещё выполняется'}. Обновите историю; сохранены только завершённые ответы.</p>}
+      <div className="rag-comparison">{displayed.answers.map(answer => <Answer key={answer.mode} answer={answer} id={displayed.id} />)}</div></>}
+  </section>
+}
+
+function Answer({ answer, id }) {
+  const metrics = answer.metrics
+  function link({ href, children }) {
+    const match = /^#source-(\d+)$/.exec(href || '')
+    if (!match) return <span>{children}</span>
+    const source = answer.sources.find(source => source.number === Number(match[1]))
+    if (!source) return <span title="Ссылка не соответствует найденным источникам">{children} (источник не найден)</span>
+    return <button className="rag-citation" onClick={() => {
+      const element = document.getElementById(`source-${id}-${answer.mode}-${source.number}`)
+      if (element) { element.open = true; element.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }) }
+    }}>{children}</button>
+  }
+  return <article className="rag-answer" aria-label={labels[answer.mode]}>
+    <h3>{labels[answer.mode]}</h3>
+    {answer.phase && <p role="status">{answer.phase}…</p>}
+    {answer.error && <p role="alert" className="rag-failure">{answer.error}</p>}
+    <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm, citationPlugin]} skipHtml components={{ a: link, img: () => null }}>{answer.text}</ReactMarkdown></div>
+    {metrics && <><p className="rag-note">{metrics.model} · {(metrics.generationMs / 1000).toFixed(2)} с ·
+      вход {number(metrics.promptTokens)} / выход {number(metrics.completionTokens)} / всего {number(metrics.totalTokens)} токенов ·
+      оценка стоимости: {metrics.costUsd == null ? 'неизвестна' : `$${metrics.costUsd.toFixed(6)}`}</p>
+      {metrics.finishReason === 'length' && <p role="alert">Ответ ограничен лимитом генерации.</p>}
+      {answer.mode === 'WITH_RAG' && <p className="rag-note">Embedding: {metrics.embeddingMs} мс / {number(metrics.embeddingTokens)} токенов · поиск: {metrics.searchMs} мс</p>}</>}
+    {answer.mode === 'WITH_RAG' && <div className="rag-sources"><h4>Источники, переданные модели</h4>
+      {!answer.sources.length && <p>Контекст отсутствует: подходящие чанки не попали в запрос.</p>}
+      {answer.sources.map(source => <details key={source.number} id={`source-${id}-${answer.mode}-${source.number}`}>
+        <summary>[{source.number}] {source.chunk.source} · {source.chunk.section || 'Без раздела'}</summary>
+        <p className="rag-note">Cosine similarity: {source.similarity.toFixed(4)} — не уверенность ответа.
+          {source.chunk.pageStart != null && ` Страницы: ${source.chunk.pageStart}–${source.chunk.pageEnd}.`} Чанк: {source.chunk.chunkId}</p>
+        <pre className="rag-source">{source.chunk.content}</pre>
+      </details>)}</div>}
+  </article>
+}

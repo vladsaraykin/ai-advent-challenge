@@ -47,6 +47,16 @@ spring:
 
 app:
   rag:
+    answer:
+      # API ID confirmed by the user. Standard short-context rates from supplied pricing page.
+      model: ${RAG_ANSWER_MODEL:gpt-6.1-sol}
+      max-completion-tokens: ${RAG_ANSWER_MAX_TOKENS:4096}
+      timeout-seconds: ${RAG_ANSWER_TIMEOUT_SECONDS:180}
+      top-k: ${RAG_TOP_K:5}
+      max-context-tokens: ${RAG_CONTEXT_TOKENS:6000}
+      input-per-million-usd: ${RAG_INPUT_PRICE:2.00}
+      cached-input-per-million-usd: ${RAG_CACHED_INPUT_PRICE:0.10}
+      output-per-million-usd: ${RAG_OUTPUT_PRICE:10.00}
     enabled: ${RAG_ENABLED:false}
     documents-directory: ${RAG_DOCUMENTS_DIRECTORY:data/rag-documents}
     chunking:

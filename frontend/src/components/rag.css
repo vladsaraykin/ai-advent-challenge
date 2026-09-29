@@ -41,5 +41,12 @@
 .rag-chunks h4 { font-size: 14px; margin-top: 24px; }
 .rag-chunks .rag-pagination { margin-top: 16px; }
 .rag-empty { padding: 20px 0; }
+.rag-questions form { display: grid; gap: 14px; }
+.rag-questions textarea { resize: vertical; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.rag-question-history { display: grid; gap: 12px; margin: 20px 0; }
+.rag-question-text { margin: 20px 0; padding: 15px; background: #eef4ff; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rag-answer { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+.rag-page .rag-citation { padding: 1px 4px; margin: 0 2px; font: inherit; color: var(--accent); }
+.rag-sources { margin-top: 20px; border-top: 1px solid var(--line); }
 @media(max-width: 1050px) { .rag-comparison { grid-template-columns: 1fr; } .rag-card-heading { min-height: 0; } }
 @media(max-width: 620px) { .rag-content { padding: 16px; } .rag-panel { padding: 16px; } .rag-section-heading { align-items: flex-start; flex-direction: column; } .rag-page { min-height: 75dvh; } }

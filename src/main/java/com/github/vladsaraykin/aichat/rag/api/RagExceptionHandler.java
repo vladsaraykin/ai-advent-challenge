@@ -9,7 +9,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
-@RestControllerAdvice(assignableTypes = {DocumentController.class, ChunkingController.class, IndexController.class})
+@RestControllerAdvice(assignableTypes = {DocumentController.class, ChunkingController.class, IndexController.class, RagQuestionController.class})
 @Order(-1)
 public class RagExceptionHandler {
     @ExceptionHandler(org.springframework.dao.DataAccessException.class)
