@@ -75,6 +75,7 @@ export const agentApi = {
   }),
   mcpServers: () => rawRequest('/api/mcp/servers'),
   ragAnswerSettings: signal => rawRequest('/api/rag/answer-settings', { signal }),
+  ragRetrievalSettings: signal => rawRequest('/api/rag/retrieval-settings', { signal }),
   ragQuestions: (id, signal) => rawRequest(`/api/rag/indexes/${encodeURIComponent(id)}/questions`, { signal }),
   askRag: (body, handlers) => stream('/questions/stream', body, handlers, '/api/rag'),
   ragDocuments: (offset = 0, signal) => rawRequest(`/api/rag/documents?limit=20&offset=${offset}`, { signal }),

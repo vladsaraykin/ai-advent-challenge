@@ -116,4 +116,82 @@ class RagQuestionServiceTest {
         service.start("alice",request,(event,data) -> { if(event.equals("completed")){ result.set((RagQuestion)data); done.countDown(); } },()->false);
         assertThat(done.await(5,TimeUnit.SECONDS)).isTrue(); return result.get();
     }
+    @Test void comparisonReordersFiltersAndRewritesOnlySearchWhilePreservingOriginalQuestion() throws Exception {
+        var model=mock(RagAnswerModel.class); var reranker=mock(Reranker.class);
+        var prompts=new CopyOnWriteArrayList<String>();
+        when(model.answer(any(),any(),any())).thenAnswer(call -> {
+            prompts.add(call.getArgument(1)); return new RagAnswerModel.Result("Ответ",metrics);
+        });
+        when(model.rewrite("Вопрос")).thenReturn(new RagAnswerModel.Result("Поисковый вопрос",metrics));
+        try(var setup=service(model);
+            var service=new RagQuestionService(indexes,repository,embeddings,"embeddinggemma",model,settings,String::length,users,
+                    reranker,new RetrievalOptions(3,1,.2))) {
+            var candidates=List.of(source("noise",.95),source("answer",.8),source("other",.7));
+            when(embeddings.embed(any())).thenReturn(new EmbeddingModel.Result(new float[768],3L));
+            when(repository.search(eq("alice"),eq(index),any(),eq(3))).thenReturn(candidates);
+            when(reranker.score(eq("Вопрос"),any())).thenReturn(List.of(.1,.9,.7));
+            var result=run(service,request(RagQuestion.Mode.COMPARE));
+            assertThat(result.status()).isEqualTo("COMPLETED");
+            assertThat(result.retrievalOptions()).isEqualTo(new RetrievalOptions(3,1,.2));
+            assertThat(result.answers()).extracting(RagQuestion.Answer::mode)
+                    .containsExactly(RagQuestion.Mode.WITH_RAG,RagQuestion.Mode.RERANKED,RagQuestion.Mode.REWRITTEN);
+            assertThat(result.answers().getFirst().sources().getFirst().chunk().content()).isEqualTo("noise");
+            var ranked=result.answers().get(1);
+            assertThat(ranked.sources().getFirst().chunk().content()).isEqualTo("answer");
+            assertThat(ranked.sources().getFirst().number()).isEqualTo(1);
+            assertThat(ranked.retrieval().candidates()).extracting(RagQuestion.Candidate::decision)
+                    .containsExactly("THRESHOLD","SELECTED","TOP_K");
+            assertThat(result.answers().getLast().retrieval().searchQuery()).isEqualTo("Поисковый вопрос");
+            assertThat(result.answers().getLast().retrieval().rewriteMetrics()).isEqualTo(metrics);
+            assertThat(prompts).allSatisfy(prompt -> assertThat(prompt).contains("\"question\":\"Вопрос\""));
+            verify(model,times(1)).rewrite("Вопрос");
+            verify(reranker,times(2)).score(eq("Вопрос"),any());
+            verify(embeddings,times(2)).embed("Вопрос"); verify(embeddings).embed("Поисковый вопрос");
+        }
+    }
+    @Test void unavailableRerankerProducesPartialComparisonWithoutSilentFallback() throws Exception {
+        var model=mock(RagAnswerModel.class);
+        when(model.answer(any(),any(),any())).thenReturn(new RagAnswerModel.Result("Ответ",metrics));
+        when(model.rewrite(any())).thenReturn(new RagAnswerModel.Result("rewrite",metrics));
+        try(var service=service(model)) {
+            when(embeddings.embed(any())).thenReturn(new EmbeddingModel.Result(new float[768],3L));
+            when(repository.search(any(),any(),any(),anyInt())).thenReturn(List.of(source("text",.9)));
+            var result=run(service,request(RagQuestion.Mode.COMPARE));
+            assertThat(result.status()).isEqualTo("PARTIAL");
+            assertThat(result.answers().getFirst().error()).isNull();
+            assertThat(result.answers().get(1).error()).contains("Reranker");
+            assertThat(result.answers().getLast().retrieval().rewriteMetrics()).isEqualTo(metrics);
+            verify(model,times(1)).answer(any(),any(),any());
+        }
+    }
+    @Test void strictThresholdEmptyCandidatesAndBudgetDoNotLeakRejectedChunks() {
+        try(var service=service(mock(RagAnswerModel.class))) {
+            var result=service.rank(List.of(source("a",.9),source("b",.8)),List.of(.2,.1),true,new RetrievalOptions(2,2,.2),2);
+            assertThat(result.sources()).hasSize(1);
+            assertThat(result.candidates()).extracting(RagQuestion.Candidate::decision).containsExactly("SELECTED","THRESHOLD");
+            assertThat(service.rank(List.of(source("a",.9)),List.of(.1),true,new RetrievalOptions(1,1,1),1).sources()).isEmpty();
+            assertThat(service.rank(List.of(),null,true,new RetrievalOptions(1,1,.2),1).sources()).isEmpty();
+            assertThat(service.rank(List.of(source("x".repeat(7000),.9)),List.of(.9),true,new RetrievalOptions(1,1,.2),1)
+                    .candidates().getFirst().decision()).isEqualTo("BUDGET");
+        }
+        assertThatThrownBy(() -> new RetrievalOptions(2,3,.1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new RetrievalOptions(51,5,.1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new RetrievalOptions(20,5,Double.NaN)).isInstanceOf(IllegalArgumentException.class);
+    }
+    private RagQuestion.Source source(String text,double similarity) {
+        return new RagQuestion.Source(1,new DocumentChunk(UUID.randomUUID(),0,"s","t","section",1,1,0,text.length(),text,3),similarity);
+    }
+    @Test void incompleteRewriteDoesNotSearchOrGenerateAndPreservesItsUsage() throws Exception {
+        var model=mock(RagAnswerModel.class);
+        var limited=new RagQuestion.Metrics("gpt-6.1-sol",10,0,0,null,20,1024,1044,0,null,"length");
+        when(model.rewrite(any())).thenReturn(new RagAnswerModel.Result("Обрезанный запрос",limited));
+        try(var service=service(model)) {
+            var result=run(service,request(RagQuestion.Mode.REWRITTEN));
+            assertThat(result.status()).isEqualTo("FAILED");
+            assertThat(result.answers().getFirst().text()).isEmpty();
+            assertThat(result.answers().getFirst().retrieval().rewriteMetrics()).isEqualTo(limited);
+            verifyNoInteractions(embeddings);
+            verify(model,never()).answer(any(),any(),any());
+        }
+    }
 }

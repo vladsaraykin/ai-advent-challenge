@@ -40,4 +40,22 @@ class OpenAiRagAnswerModelTest {
         when(model.stream(any(Prompt.class))).thenReturn(Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("partial"))))));
         assertThatThrownBy(() -> new OpenAiRagAnswerModel(model,settings).answer("system","q",part -> {})).hasMessageContaining("Incomplete");
     }
+    @Test void rewriteHasOwnLimitAndUsageWithoutToolsOrAnswerStreaming() {
+        var model=mock(ChatModel.class);
+        when(model.stream(any(Prompt.class))).thenAnswer(call -> {
+            Prompt prompt=call.getArgument(0);
+            var options=(OpenAiChatOptions)prompt.getOptions();
+            assertThat(options.getMaxCompletionTokens()).isEqualTo(1024);
+            assertThat(options.getToolCallbacks()).isNullOrEmpty();
+            assertThat(options.getToolChoice()).isNull();
+            assertThat(prompt.getContents()).contains("Сохрани смысл","Не отвечай");
+            return Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("Поисковая формулировка"),
+                    ChatGenerationMetadata.builder().finishReason("STOP").build())),
+                    ChatResponseMetadata.builder().usage(new DefaultUsage(100,20,120)).build()));
+        });
+        var result=new OpenAiRagAnswerModel(model,settings).rewrite("Вопрос");
+        assertThat(result.text()).isEqualTo("Поисковая формулировка");
+        assertThat(result.metrics().totalTokens()).isEqualTo(120);
+        assertThat(result.metrics().costUsd()).isEqualByComparingTo("0.0004");
+    }
 }

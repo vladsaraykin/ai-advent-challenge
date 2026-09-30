@@ -17,6 +17,11 @@
 .rag-section-heading { display: flex; gap: 20px; justify-content: space-between; align-items: center; }
 .rag-section-heading button { flex-shrink: 0; }
 .rag-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.rag-comparison.rag-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rag-retrieval-options { border: 1px solid #d7dfeb; border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
+.rag-retrieval-trace { margin: 16px 0; padding: 12px; background: #f1f5f9; border-radius: 10px; overflow-wrap: anywhere; }
+.rag-retrieval-trace details { margin-top: 10px; }
+@media(max-width: 1200px) { .rag-comparison.rag-three { grid-template-columns: 1fr; } }
 .rag-card-heading { min-height: 130px; }
 .rag-run-picker { margin: 20px 0; }
 .rag-page .rag-run-status { font-weight: 700; color: #285cba; background: #eef4ff; padding: 10px 12px; border-radius: 8px; }

@@ -5,6 +5,7 @@ import RagQuestions from './RagQuestions'
 
 const indexes = [{ id: 'index-one', strategy: 'FIXED_SIZE', createdAt: '2026-09-29T10:00:00Z' }]
 const createApi = () => ({ ragAnswerSettings: vi.fn().mockResolvedValue({ model: 'gpt-6.1-sol', topK: 5, maxCompletionTokens: 4096 }),
+  ragRetrievalSettings: vi.fn().mockResolvedValue({ candidateK: 20, finalK: 5, threshold: 0.2 }),
   ragQuestions: vi.fn().mockResolvedValue([]), askRag: vi.fn() })
 
 describe('RAG questions', () => {
@@ -53,5 +54,44 @@ describe('RAG questions', () => {
     render(<RagQuestions api={createApi()} indexes={[]} />)
     expect(await screen.findByText('Сначала завершите индексацию документа.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Получить оба ответа' })).toBeDisabled()
+  })
+  it('sends ranking settings and displays three answers, rewrite costs and rejected candidates', async () => {
+    const api = createApi()
+    api.askRag.mockImplementation(async (request, handlers) => {
+      const source = { number: 1, similarity: 0.9, chunk: { source: 'paper.pdf', section: 'Раздел', chunkId: 'c1', content: 'Текст источника' } }
+      const metrics = { model: 'gpt-6.1-sol', generationMs: 100, embeddingMs: 10, searchMs: 2, promptTokens: 10, completionTokens: 5, totalTokens: 15, costUsd: 0.0001 }
+      const retrieval = { searchQuery: 'Переформулированный вопрос', rerankingMs: 25, options: request.retrievalOptions,
+        rewriteMetrics: metrics, candidates: [{ source, rerankerScore: 0.1, decision: 'THRESHOLD' }] }
+      handlers.retrieval({ mode: 'REWRITTEN', retrieval })
+      handlers.completed({ ...request, status: 'COMPLETED', answers: [
+        { mode: 'WITH_RAG', text: 'Базовый ответ', sources: [source], metrics },
+        { mode: 'RERANKED', text: 'Отфильтрованный ответ', sources: [], metrics },
+        { mode: 'REWRITTEN', text: 'Нет достаточных источников', sources: [], metrics, retrieval }] })
+    })
+    render(<RagQuestions api={api} indexes={indexes} />)
+    await userEvent.selectOptions(screen.getByLabelText('Режим ответа'), 'COMPARE')
+    await userEvent.clear(screen.getByLabelText('Порог reranker'))
+    await userEvent.type(screen.getByLabelText('Порог reranker'), '0.4')
+    await userEvent.type(screen.getByLabelText('Ваш вопрос'), 'Как передать сессию?')
+    await userEvent.click(screen.getByRole('button', { name: 'Сравнить три режима' }))
+    expect(api.askRag.mock.calls[0][0]).toMatchObject({ mode: 'COMPARE', retrievalOptions: { candidateK: 20, finalK: 5, threshold: 0.4 } })
+    expect(await screen.findByText('Базовый ответ')).toBeInTheDocument()
+    expect(screen.getByText(/Поисковый вопрос:/)).toHaveTextContent('Переформулированный вопрос')
+    expect(screen.getByText(/Rewrite:/)).toHaveTextContent('ответ + rewrite: $0.000200')
+    expect(screen.getByText(/найдено 1, передано 0/)).toBeInTheDocument()
+    expect(screen.getByText(/Ниже порога/)).toBeInTheDocument()
+    expect(screen.getByText(/reranker: 0.1000/)).toBeInTheDocument()
+  })
+  it('rejects final top-K larger than candidate count without sending a request', async () => {
+    const api = createApi()
+    render(<RagQuestions api={api} indexes={indexes} />)
+    await waitFor(() => expect(api.ragRetrievalSettings).toHaveBeenCalled())
+    await userEvent.selectOptions(screen.getByLabelText('Режим ответа'), 'RERANKED')
+    await userEvent.clear(screen.getByLabelText('Top-K до reranker'))
+    await userEvent.type(screen.getByLabelText('Top-K до reranker'), '2')
+    await userEvent.type(screen.getByLabelText('Ваш вопрос'), 'Вопрос')
+    await userEvent.click(screen.getByRole('button', { name: 'Получить ответ' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('не больше')
+    expect(api.askRag).not.toHaveBeenCalled()
   })
 })

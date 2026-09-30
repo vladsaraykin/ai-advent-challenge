@@ -12,7 +12,7 @@ public final class JdbcRagQuestionRepository implements RagQuestionRepository {
     public JdbcRagQuestionRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     @Override public List<RagQuestion.Source> search(String owner, UUID index, float[] embedding, int topK) {
-        if (embedding.length != 768 || topK < 1 || topK > 20) throw new EmbeddingModel.Failure("INVALID_EMBEDDING");
+        if (embedding.length != 768 || topK < 1 || topK > 50) throw new EmbeddingModel.Failure("INVALID_EMBEDDING");
         var vector = new StringJoiner(",", "[", "]");
         double norm = 0;
         for (float value : embedding) {

@@ -6,6 +6,7 @@
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
 - Day 12 adds authenticated user profiles and personalization on top of the Day 11 memory layers. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
 - Day 20 adds multi-server MCP orchestration to the authenticated agent chat. Keep MCP credentials, process configuration and filesystem roots on the backend. Normal chat is the default; the user explicitly selects up to eight connected servers for a request. Reject ambiguous tool names and bound tool execution to 24 calls per request.
+- Day 23 adds independent RAG experiments: baseline, reranker and rewrite + reranker. Scope retrieval to the authenticated user's selected completed index. Persist retrieval parameters, candidate scores/decisions, sources and rewrite usage. Compare quality manually; never silently fall back when reranker fails.
 
 ## Architecture
 
@@ -30,6 +31,7 @@
 - Explain each strategy's retention in UI. If its prepared context exceeds the configured character limit, return a clear error; this is not the model's exact token limit.
 - Stream responses as typed SSE events. Do not persist partial assistant output when a stream fails before completion.
 - Bound concurrency and shut executors down cleanly.
+- Query rewrite changes search text only; reranking and final generation use the original question. Keep rewrite tools disabled, validate completion, and account for its tokens/USD separately. Apply reranker threshold, final top-K and whole-chunk budget before numbering citations; scores are not answer probabilities.
 
 ## Memory layers
 

@@ -24,6 +24,7 @@ public class RagQuestionController {
     public RagQuestionController(RagQuestionService service) { this.service=service; heartbeats.setRemoveOnCancelPolicy(true); }
     @jakarta.annotation.PreDestroy public void close() { heartbeats.shutdownNow(); }
     @GetMapping("/answer-settings") public RagAnswerSettings settings() { return service.settings(); }
+    @GetMapping("/retrieval-settings") public RetrievalOptions retrievalSettings() { return service.retrievalDefaults(); }
     @GetMapping("/indexes/{id}/questions") public List<RagQuestion> list(Principal principal,@PathVariable UUID id) { return service.list(principal.getName(),id); }
     @PostMapping(value="/questions/stream",produces="text/event-stream")
     public SseEmitter stream(Principal principal,@RequestBody RagQuestionService.Request request) {

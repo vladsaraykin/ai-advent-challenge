@@ -47,6 +47,12 @@ spring:
 
 app:
   rag:
+    reranker:
+      base-url: ${RAG_RERANKER_URL:http://127.0.0.1:18090}
+      timeout-seconds: ${RAG_RERANKER_TIMEOUT_SECONDS:60}
+      candidate-k: ${RAG_CANDIDATE_K:20}
+      final-k: ${RAG_FINAL_K:5}
+      threshold: ${RAG_RERANKER_THRESHOLD:0.2}
     answer:
       # API ID confirmed by the user. Standard short-context rates from supplied pricing page.
       model: ${RAG_ANSWER_MODEL:gpt-6.1-sol}

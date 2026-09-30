@@ -35,6 +35,6 @@ public class RagExceptionHandler {
     @ExceptionHandler({MissingServletRequestPartException.class, MultipartException.class,
             MethodArgumentTypeMismatchException.class, org.springframework.http.converter.HttpMessageNotReadableException.class})
     public ResponseEntity<ErrorView> invalid(Exception error) {
-        return failure(new RagFailure(RagFailure.Kind.INVALID, "Передайте один файл в поле file и корректные параметры запроса."));
+        return failure(new RagFailure(RagFailure.Kind.INVALID, "Некорректные параметры: проверьте файл, индекс, режим; top-K до 1–50, после 1–20 и не больше первого, порог 0–1."));
     }
 }

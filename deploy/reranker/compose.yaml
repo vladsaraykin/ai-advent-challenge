@@ -1,0 +1,25 @@
+name: ai-advent-reranker
+services:
+  reranker:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-127.0.0.1}:18090:8000"
+    environment:
+      RERANKER_MODEL: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+      RERANKER_THREADS: "${RERANKER_THREADS:-4}"
+    volumes:
+      - reranker_models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  reranker_models:

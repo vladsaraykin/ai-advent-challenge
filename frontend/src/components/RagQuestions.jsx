@@ -4,7 +4,11 @@ import remarkGfm from 'remark-gfm'
 import { newMessageId } from '../messageId'
 import { number, strategyLabels } from './ragUtils'
 
-const labels = { WITHOUT_RAG: 'Без RAG', WITH_RAG: 'С RAG', BOTH: 'Оба ответа' }
+const labels = { WITHOUT_RAG: 'Без RAG', WITH_RAG: 'Базовый RAG', BOTH: 'Оба ответа',
+  RERANKED: 'RAG + reranker', REWRITTEN: 'RAG + rewrite + reranker', COMPARE: 'Сравнить три режима RAG' }
+const modesFor = mode => mode === 'COMPARE' ? ['WITH_RAG', 'RERANKED', 'REWRITTEN']
+  : mode === 'BOTH' ? ['WITHOUT_RAG', 'WITH_RAG'] : [mode]
+const decisions = { SELECTED: 'В контексте', THRESHOLD: 'Ниже порога', TOP_K: 'За пределами top-K', BUDGET: 'Не поместился в контекст', INVALID: 'Некорректная оценка', NOT_EVALUATED: 'Отбор не завершён' }
 
 // Turn citations in prose (not code or existing links) into local references.
 function citationPlugin() {
@@ -32,6 +36,8 @@ export default function RagQuestions({ api, indexes }) {
   const [settings, setSettings] = useState(null)
   const [question, setQuestion] = useState('')
   const [mode, setMode] = useState('BOTH')
+  const [retrievalOptions, setRetrievalOptions] = useState({ candidateK: 20, finalK: 5, threshold: 0.2 })
+  const enhanced = ['RERANKED', 'REWRITTEN', 'COMPARE'].includes(mode)
   const [history, setHistory] = useState([])
   const [selected, setSelected] = useState('')
   const [current, setCurrent] = useState(null)
@@ -45,6 +51,8 @@ export default function RagQuestions({ api, indexes }) {
   useEffect(() => {
     const controller = new AbortController()
     api.ragAnswerSettings(controller.signal).then(value => { if (!controller.signal.aborted) setSettings(value) })
+      .catch(error => { if (!controller.signal.aborted) setError(error.message) })
+    api.ragRetrievalSettings?.(controller.signal).then(value => { if (!controller.signal.aborted) setRetrievalOptions(value) })
       .catch(error => { if (!controller.signal.aborted) setError(error.message) })
     return () => controller.abort()
   }, [api, revision])
@@ -61,10 +69,12 @@ export default function RagQuestions({ api, indexes }) {
   async function ask(event) {
     event.preventDefault()
     if (busy.current || !index || !question.trim()) return
+    if (enhanced && (retrievalOptions.finalK > retrievalOptions.candidateK)) { setError('Top-K после должен быть не больше top-K до.'); return }
     busy.current = true; setChosen(index.id); setPending(true); setError(''); setSelected('')
     const controller = new AbortController(); stream.current = controller
-    const request = { id: newMessageId(), indexId: index.id, question: question.trim(), mode }
-    const modes = mode === 'BOTH' ? ['WITHOUT_RAG', 'WITH_RAG'] : [mode]
+    const request = { id: newMessageId(), indexId: index.id, question: question.trim(), mode,
+      ...(enhanced ? { retrievalOptions } : {}) }
+    const modes = modesFor(mode)
     setCurrent({ ...request, answers: modes.map(mode => ({ mode, text: '', sources: [], phase: 'Ожидание', metrics: null })) })
     function update(mode, patch) {
       if (!controller.signal.aborted) setCurrent(value => ({ ...value, answers: value.answers.map(answer => answer.mode === mode ? patch(answer) : answer) }))
@@ -75,6 +85,7 @@ export default function RagQuestions({ api, indexes }) {
         signal: controller.signal,
         phase: value => update(value.mode, answer => ({ ...answer, phase: value.phase })),
         sources: value => update(value.mode, answer => ({ ...answer, sources: value.sources })),
+        retrieval: value => update(value.mode, answer => ({ ...answer, retrieval: value.retrieval })),
         delta: value => update(value.mode, answer => ({ ...answer, text: answer.text + value.text })),
         answer: value => update(value.mode, () => value),
         completed: value => {
@@ -94,7 +105,7 @@ export default function RagQuestions({ api, indexes }) {
 
   const displayed = selected ? history.find(item => item.id === selected) : current
   return <section className="rag-panel rag-questions" aria-labelledby="rag-questions-title">
-    <span className="eyebrow">День 22 · Первый RAG-запрос</span><h2 id="rag-questions-title">Вопрос к документу</h2>
+    <span className="eyebrow">День 23 · Реранкинг и фильтрация</span><h2 id="rag-questions-title">Вопрос к документу</h2>
     <p>Каждый вопрос независим. Одна модель и одинаковые параметры, но в режиме RAG добавляются найденные источники.</p>
     <p>{settings?.model || 'Модель не настроена'} · top-K {settings?.topK ?? '—'} · лимит ответа {settings?.maxCompletionTokens ?? '—'} токенов</p>
     {!index && <p role="status">Сначала завершите индексацию документа.</p>}
@@ -106,10 +117,21 @@ export default function RagQuestions({ api, indexes }) {
       <label>Режим ответа<select value={mode} disabled={pending} onChange={event => setMode(event.target.value)}>
         {Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
       </select></label>
+      {enhanced && <fieldset className="rag-retrieval-options" disabled={pending}><legend>Отбор источников</legend>
+        <label>Top-K до reranker<input type="number" min="1" max="50" required value={retrievalOptions.candidateK}
+          onChange={event => setRetrievalOptions(value => ({ ...value, candidateK: Number(event.target.value) }))} /></label>
+        <label>Top-K после reranker<input type="number" min="1" max="20" required value={retrievalOptions.finalK}
+          onChange={event => setRetrievalOptions(value => ({ ...value, finalK: Number(event.target.value) }))} /></label>
+        <label>Порог reranker<input type="number" min="0" max="1" step="0.01" required value={retrievalOptions.threshold}
+          onChange={event => setRetrievalOptions(value => ({ ...value, threshold: Number(event.target.value) }))} /></label>
+        <p className="rag-note">Порог применяется к sigmoid-оценке reranker, а не к cosine similarity. Это не вероятность правильного ответа.
+          В сравнении базовый RAG получает такой же top-K кандидатов и итоговый лимит, но без reranker и порога.</p>
+      </fieldset>}
       <label>Ваш вопрос<textarea rows={3} maxLength={4000} value={question} disabled={pending} onChange={event => setQuestion(event.target.value)} required /></label>
       <button className="rag-primary" disabled={pending || loading || !index || !settings?.model || !question.trim()}>
-        {pending ? 'Получаем ответ…' : mode === 'BOTH' ? 'Получить оба ответа' : 'Получить ответ'}</button>
-      <p className="rag-note">Вопрос и выбранные чанки отправляются вашему LLM-провайдеру. «Оба ответа» — два платных вызова, последовательно. Переключение документа/вкладки прервёт отображение потока; проверьте историю перед повтором.</p>
+        {pending ? 'Получаем ответ…' : mode === 'COMPARE' ? 'Сравнить три режима' : mode === 'BOTH' ? 'Получить оба ответа' : 'Получить ответ'}</button>
+      <p className="rag-note">Вопрос и выбранные чанки отправляются вашему LLM-провайдеру. «Оба ответа» — два вызова;
+        «Сравнить три режима» — три ответа и один rewrite, последовательно. Rewrite тоже оплачивается. Переключение вкладки прервёт отображение потока; проверьте историю перед повтором.</p>
     </form>
     {error && <div role="alert" className="rag-failure">{error}</div>}
     <div className="rag-question-history"><button disabled={pending} onClick={() => { setError(''); setRevision(value => value + 1) }}>Обновить историю ответов</button>
@@ -119,12 +141,14 @@ export default function RagQuestions({ api, indexes }) {
     {loading && <p role="status">Загружаем историю ответов…</p>}
     {displayed && <><blockquote className="rag-question-text">{displayed.question}</blockquote>
       {['INTERRUPTED', 'RUNNING'].includes(displayed.status) && <p role="status">Запрос {displayed.status === 'INTERRUPTED' ? 'прерван' : 'ещё выполняется'}. Обновите историю; сохранены только завершённые ответы.</p>}
-      <div className="rag-comparison">{displayed.answers.map(answer => <Answer key={answer.mode} answer={answer} id={displayed.id} />)}</div></>}
+      <div className={`rag-comparison ${displayed.answers.length === 3 ? 'rag-three' : ''}`}>{displayed.answers.map(answer => <Answer key={answer.mode} answer={answer} id={displayed.id} />)}</div></>}
   </section>
 }
 
 function Answer({ answer, id }) {
   const metrics = answer.metrics
+  const retrieval = answer.retrieval
+  const rewrite = retrieval?.rewriteMetrics
   function link({ href, children }) {
     const match = /^#source-(\d+)$/.exec(href || '')
     if (!match) return <span>{children}</span>
@@ -144,8 +168,23 @@ function Answer({ answer, id }) {
       вход {number(metrics.promptTokens)} / выход {number(metrics.completionTokens)} / всего {number(metrics.totalTokens)} токенов ·
       оценка стоимости: {metrics.costUsd == null ? 'неизвестна' : `$${metrics.costUsd.toFixed(6)}`}</p>
       {metrics.finishReason === 'length' && <p role="alert">Ответ ограничен лимитом генерации.</p>}
-      {answer.mode === 'WITH_RAG' && <p className="rag-note">Embedding: {metrics.embeddingMs} мс / {number(metrics.embeddingTokens)} токенов · поиск: {metrics.searchMs} мс</p>}</>}
-    {answer.mode === 'WITH_RAG' && <div className="rag-sources"><h4>Источники, переданные модели</h4>
+      {answer.mode !== 'WITHOUT_RAG' && <p className="rag-note">Embedding: {metrics.embeddingMs} мс / {number(metrics.embeddingTokens)} токенов · поиск: {metrics.searchMs} мс
+        {retrieval && ` · reranker: ${retrieval.rerankingMs} мс`}</p>}</>}
+    {retrieval && <div className="rag-retrieval-trace"><p>Поисковый вопрос: {retrieval.searchQuery}</p>
+      {metrics && <p className="rag-note">Время этапов (сумма): {((metrics.generationMs + metrics.embeddingMs + metrics.searchMs + retrieval.rerankingMs + (rewrite?.generationMs || 0)) / 1000).toFixed(2)} с
+        {rewrite && ` · токены LLM (ответ + rewrite): ${number(metrics.totalTokens == null || rewrite.totalTokens == null ? null : metrics.totalTokens + rewrite.totalTokens)}`}</p>}
+      {rewrite && <p className="rag-note">Rewrite: {(rewrite.generationMs / 1000).toFixed(2)} с · вход {number(rewrite.promptTokens)} / выход {number(rewrite.completionTokens)} токенов ·
+        стоимость {rewrite.costUsd == null ? 'неизвестна' : `$${rewrite.costUsd.toFixed(6)}`}
+        {metrics && ` · ответ + rewrite: ${metrics.costUsd == null || rewrite.costUsd == null ? 'неизвестна' : `$${(metrics.costUsd + rewrite.costUsd).toFixed(6)}`}`}</p>}
+      <details><summary>Отбор чанков: найдено {retrieval.candidates.length}, передано {answer.sources.length}</summary>
+        <p className="rag-note">Top-K до {retrieval.options.candidateK} / после {retrieval.options.finalK} · порог {retrieval.options.threshold}</p>
+        {retrieval.candidates.map(candidate => <details key={candidate.source.chunk.chunkId}>
+          <summary>#{candidate.source.number} · {candidate.source.chunk.section || candidate.source.chunk.source} · {decisions[candidate.decision]}</summary>
+          <p>Cosine: {candidate.source.similarity.toFixed(4)} · reranker: {candidate.rerankerScore == null ? 'не применялся' : candidate.rerankerScore.toFixed(4)}</p>
+          <pre className="rag-source">{candidate.source.chunk.content}</pre>
+        </details>)}
+      </details></div>}
+    {answer.mode !== 'WITHOUT_RAG' && <div className="rag-sources"><h4>Источники, переданные модели</h4>
       {!answer.sources.length && <p>Контекст отсутствует: подходящие чанки не попали в запрос.</p>}
       {answer.sources.map(source => <details key={source.number} id={`source-${id}-${answer.mode}-${source.number}`}>
         <summary>[{source.number}] {source.chunk.source} · {source.chunk.section || 'Без раздела'}</summary>
