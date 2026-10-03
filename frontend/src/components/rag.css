@@ -53,5 +53,8 @@
 .rag-answer { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
 .rag-page .rag-citation { padding: 1px 4px; margin: 0 2px; font: inherit; color: var(--accent); }
 .rag-sources { margin-top: 20px; border-top: 1px solid var(--line); }
+.rag-evidence { margin: 18px 0; padding: 16px; background: #f0f7f4; border: 1px solid #cce2d7; border-radius: 10px; overflow-wrap: anywhere; }
+.rag-evidence-item + .rag-evidence-item { margin-top: 18px; border-top: 1px solid #cce2d7; padding-top: 12px; }
+.rag-evidence blockquote { margin: 10px 0; padding: 8px 12px; border-left: 3px solid #32866b; white-space: pre-wrap; font-size: 13px; line-height: 1.7; }
 @media(max-width: 1050px) { .rag-comparison { grid-template-columns: 1fr; } .rag-card-heading { min-height: 0; } }
 @media(max-width: 620px) { .rag-content { padding: 16px; } .rag-panel { padding: 16px; } .rag-section-heading { align-items: flex-start; flex-direction: column; } .rag-page { min-height: 75dvh; } }

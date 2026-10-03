@@ -28,12 +28,14 @@ describe('RAG questions', () => {
     expect(container.querySelector('script')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: '[1]' }))
     expect(container.querySelector('details')).toHaveAttribute('open')
-    const answer = { mode: 'WITH_RAG', text: 'Ответ [1]', sources: [source], metrics: { model: 'gpt-6.1-sol', generationMs: 500, promptTokens: 100, completionTokens: 20, totalTokens: 120, costUsd: 0.0004, embeddingMs: 10, searchMs: 2 } }
+    const answer = { mode: 'WITH_RAG', text: 'Ответ [1]', sources: [source], grounding: { status: 'VERIFIED', quotes: [{ sourceNumber: 1, quote: 'Источник' }] }, metrics: { model: 'gpt-6.1-sol', generationMs: 500, promptTokens: 100, completionTokens: 20, totalTokens: 120, costUsd: 0.0004, embeddingMs: 10, searchMs: 2 } }
     await act(async () => {
       handlers.completed({ ...api.askRag.mock.calls[0][0], status: 'COMPLETED', answers: [answer] }); resolve()
     })
     expect(screen.getByText(/оценка стоимости:/)).toHaveTextContent('$0.000400')
     expect(screen.getByLabelText('Ваш вопрос')).toHaveValue('Что такое PDLC?')
+    expect(screen.getByRole('region', { name: 'Подтверждения ответа' })).toHaveTextContent('chunk_id: chunk-1')
+    expect(screen.getByRole('button', { name: 'Открыть полный чанк' })).toBeInTheDocument()
   })
 
   it('removes incomplete output on failure and preserves the draft for retry', async () => {
@@ -54,6 +56,21 @@ describe('RAG questions', () => {
     render(<RagQuestions api={createApi()} indexes={[]} />)
     expect(await screen.findByText('Сначала завершите индексацию документа.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Получить оба ответа' })).toBeDisabled()
+  })
+  it('loads a saved refusal without inventing quotes and shows skipped generation', async () => {
+    const api = createApi()
+    api.ragQuestions.mockResolvedValue([{ id: 'saved', question: 'Нет ответа', status: 'COMPLETED', answers: [
+      { mode: 'RERANKED', text: 'Не знаю. Уточните вопрос.', sources: [],
+        grounding: { status: 'INSUFFICIENT_CONTEXT', reason: 'NO_ELIGIBLE_CONTEXT', quotes: [] },
+        metrics: { model: 'gpt-6.1-sol', generationMs: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0,
+          costUsd: 0, embeddingMs: 10, searchMs: 2, finishReason: 'not_called' } }
+    ] }])
+    render(<RagQuestions api={api} indexes={indexes} />)
+    await screen.findByRole('option', { name: 'Нет ответа · COMPLETED' })
+    await userEvent.selectOptions(screen.getByLabelText('Сохранённые вопросы'), 'saved')
+    expect(screen.getByText('Не знаю. Уточните вопрос.')).toBeInTheDocument()
+    expect(screen.getByText(/генерация не вызывалась/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Открыть полный чанк' })).not.toBeInTheDocument()
   })
   it('sends ranking settings and displays three answers, rewrite costs and rejected candidates', async () => {
     const api = createApi()

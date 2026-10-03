@@ -17,7 +17,12 @@ public record RagQuestion(UUID id, UUID indexId, String question, Mode mode, Str
     public record Metrics(String model, long generationMs, long embeddingMs, long searchMs,
                           Long embeddingTokens, Integer promptTokens, Integer completionTokens,
                           Integer totalTokens, Integer cachedPromptTokens, BigDecimal costUsd, String finishReason) { }
-    public record Answer(Mode mode, String text, List<Source> sources, Metrics metrics, String error, Retrieval retrieval) {
+    public record Evidence(int sourceNumber, String quote) { }
+    public record Grounding(String status, String reason, List<Evidence> quotes) { }
+    public record Answer(Mode mode, String text, List<Source> sources, Metrics metrics, String error, Retrieval retrieval, Grounding grounding) {
+        public Answer(Mode mode, String text, List<Source> sources, Metrics metrics, String error, Retrieval retrieval) {
+            this(mode,text,sources,metrics,error,retrieval,null);
+        }
         public Answer(Mode mode, String text, List<Source> sources, Metrics metrics, String error) {
             this(mode,text,sources,metrics,error,null);
         }

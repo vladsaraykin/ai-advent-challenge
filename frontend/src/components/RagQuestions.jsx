@@ -105,8 +105,10 @@ export default function RagQuestions({ api, indexes }) {
 
   const displayed = selected ? history.find(item => item.id === selected) : current
   return <section className="rag-panel rag-questions" aria-labelledby="rag-questions-title">
-    <span className="eyebrow">День 23 · Реранкинг и фильтрация</span><h2 id="rag-questions-title">Вопрос к документу</h2>
+    <span className="eyebrow">День 24 · Источники и цитаты</span><h2 id="rag-questions-title">Вопрос к документу</h2>
     <p>Каждый вопрос независим. Одна модель и одинаковые параметры, но в режиме RAG добавляются найденные источники.</p>
+    <p className="rag-note">RAG-ответ появляется после проверки цитат. Проверяется наличие фрагментов в чанках, а не истинность всех выводов.
+      Если подходящего контекста нет — «не знаю» без генерации ответа. При ошибке reranker подмены базовым поиском нет.</p>
     <p>{settings?.model || 'Модель не настроена'} · top-K {settings?.topK ?? '—'} · лимит ответа {settings?.maxCompletionTokens ?? '—'} токенов</p>
     {!index && <p role="status">Сначала завершите индексацию документа.</p>}
     <form onSubmit={ask}>
@@ -130,8 +132,9 @@ export default function RagQuestions({ api, indexes }) {
       <label>Ваш вопрос<textarea rows={3} maxLength={4000} value={question} disabled={pending} onChange={event => setQuestion(event.target.value)} required /></label>
       <button className="rag-primary" disabled={pending || loading || !index || !settings?.model || !question.trim()}>
         {pending ? 'Получаем ответ…' : mode === 'COMPARE' ? 'Сравнить три режима' : mode === 'BOTH' ? 'Получить оба ответа' : 'Получить ответ'}</button>
-      <p className="rag-note">Вопрос и выбранные чанки отправляются вашему LLM-провайдеру. «Оба ответа» — два вызова;
-        «Сравнить три режима» — три ответа и один rewrite, последовательно. Rewrite тоже оплачивается. Переключение вкладки прервёт отображение потока; проверьте историю перед повтором.</p>
+      <p className="rag-note">Вопрос и выбранные чанки отправляются вашему LLM-провайдеру. «Оба ответа» — до двух вызовов;
+        «Сравнить три режима» — до трёх ответов и один rewrite, последовательно. При пустом контексте генерация пропускается.
+        Rewrite тоже оплачивается. Переключение вкладки прервёт отображение потока; проверьте историю перед повтором.</p>
     </form>
     {error && <div role="alert" className="rag-failure">{error}</div>}
     <div className="rag-question-history"><button disabled={pending} onClick={() => { setError(''); setRevision(value => value + 1) }}>Обновить историю ответов</button>
@@ -164,9 +167,23 @@ function Answer({ answer, id }) {
     {answer.phase && <p role="status">{answer.phase}…</p>}
     {answer.error && <p role="alert" className="rag-failure">{answer.error}</p>}
     <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm, citationPlugin]} skipHtml components={{ a: link, img: () => null }}>{answer.text}</ReactMarkdown></div>
+    {answer.grounding && <section className="rag-evidence" aria-label="Подтверждения ответа">
+      <h4>{answer.grounding.status === 'VERIFIED' ? 'Источники и проверенные цитаты' : 'Недостаточно контекста'}</h4>
+      {answer.grounding.status === 'VERIFIED' && <p className="rag-note">Цитаты найдены в указанных чанках. Проверьте самостоятельно, подтверждают ли они смысл ответа.</p>}
+      {answer.grounding.quotes.map((evidence, position) => {
+        const source = answer.sources.find(item => item.number === evidence.sourceNumber)
+        return <div key={position} className="rag-evidence-item">
+          <blockquote>{evidence.quote}</blockquote>
+          {source && <><p>[{source.number}] {source.chunk.source} · {source.chunk.section || 'Без раздела'}</p>
+            <p className="rag-note">{source.chunk.pageStart != null && `Страницы ${source.chunk.pageStart}–${source.chunk.pageEnd} · `}chunk_id: {source.chunk.chunkId}</p>
+            {link({ href: `#source-${source.number}`, children: 'Открыть полный чанк' })}</>}
+        </div>
+      })}
+    </section>}
+    {!answer.grounding && !answer.error && answer.metrics && answer.mode !== 'WITHOUT_RAG' && <p className="rag-note">Исторический ответ: обязательные цитаты ещё не проверялись.</p>}
     {metrics && <><p className="rag-note">{metrics.model} · {(metrics.generationMs / 1000).toFixed(2)} с ·
       вход {number(metrics.promptTokens)} / выход {number(metrics.completionTokens)} / всего {number(metrics.totalTokens)} токенов ·
-      оценка стоимости: {metrics.costUsd == null ? 'неизвестна' : `$${metrics.costUsd.toFixed(6)}`}</p>
+      оценка стоимости: {metrics.costUsd == null ? 'неизвестна' : `$${metrics.costUsd.toFixed(6)}`}{metrics.finishReason === 'not_called' && ' · генерация не вызывалась'}</p>
       {metrics.finishReason === 'length' && <p role="alert">Ответ ограничен лимитом генерации.</p>}
       {answer.mode !== 'WITHOUT_RAG' && <p className="rag-note">Embedding: {metrics.embeddingMs} мс / {number(metrics.embeddingTokens)} токенов · поиск: {metrics.searchMs} мс
         {retrieval && ` · reranker: ${retrieval.rerankingMs} мс`}</p>}</>}

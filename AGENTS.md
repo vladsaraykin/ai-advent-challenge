@@ -7,6 +7,7 @@
 - Day 12 adds authenticated user profiles and personalization on top of the Day 11 memory layers. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
 - Day 20 adds multi-server MCP orchestration to the authenticated agent chat. Keep MCP credentials, process configuration and filesystem roots on the backend. Normal chat is the default; the user explicitly selects up to eight connected servers for a request. Reject ambiguous tool names and bound tool execution to 24 calls per request.
 - Day 23 adds independent RAG experiments: baseline, reranker and rewrite + reranker. Scope retrieval to the authenticated user's selected completed index. Persist retrieval parameters, candidate scores/decisions, sources and rewrite usage. Compare quality manually; never silently fall back when reranker fails.
+- Day 24 requires structured RAG answers with server-validated source references and verbatim quotes. Withhold raw structured output until validation; preserve provider usage on validation failure. Empty eligible context returns an explicit insufficient-context answer without generation. Quote presence is not semantic entailment; quality comparison remains manual.
 
 ## Architecture
 

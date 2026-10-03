@@ -29,7 +29,7 @@ class RagQuestionServiceTest {
     RagQuestionService.Request request(RagQuestion.Mode mode) { return new RagQuestionService.Request(UUID.randomUUID(),index,"Вопрос",mode); }
     @Test void baselineNeverRetrievesAndBothModesUseIndependentContexts() throws Exception {
         var prompts=new CopyOnWriteArrayList<String>();
-        try(var service=service((system,user,delta) -> { prompts.add(user); assertThat(system).contains("Кратко"); delta.accept("Ответ"); return new RagAnswerModel.Result("Ответ",metrics); })) {
+        try(var service=service((system,user,delta) -> { prompts.add(user); assertThat(system).contains("Кратко"); delta.accept("Ответ"); return new RagAnswerModel.Result(system.contains("строго JSON") ? unknownJson() : "Ответ",metrics); })) {
             run(service,request(RagQuestion.Mode.WITHOUT_RAG));
             verifyNoInteractions(embeddings);
             verify(repository,never()).search(any(),any(),any(),anyInt());
@@ -120,7 +120,7 @@ class RagQuestionServiceTest {
         var model=mock(RagAnswerModel.class); var reranker=mock(Reranker.class);
         var prompts=new CopyOnWriteArrayList<String>();
         when(model.answer(any(),any(),any())).thenAnswer(call -> {
-            prompts.add(call.getArgument(1)); return new RagAnswerModel.Result("Ответ",metrics);
+            prompts.add(call.getArgument(1)); return new RagAnswerModel.Result(unknownJson(),metrics);
         });
         when(model.rewrite("Вопрос")).thenReturn(new RagAnswerModel.Result("Поисковый вопрос",metrics));
         try(var setup=service(model);
@@ -151,7 +151,7 @@ class RagQuestionServiceTest {
     }
     @Test void unavailableRerankerProducesPartialComparisonWithoutSilentFallback() throws Exception {
         var model=mock(RagAnswerModel.class);
-        when(model.answer(any(),any(),any())).thenReturn(new RagAnswerModel.Result("Ответ",metrics));
+        when(model.answer(any(),any(),any())).thenReturn(new RagAnswerModel.Result(unknownJson(),metrics));
         when(model.rewrite(any())).thenReturn(new RagAnswerModel.Result("rewrite",metrics));
         try(var service=service(model)) {
             when(embeddings.embed(any())).thenReturn(new EmbeddingModel.Result(new float[768],3L));
@@ -180,6 +180,65 @@ class RagQuestionServiceTest {
     }
     private RagQuestion.Source source(String text,double similarity) {
         return new RagQuestion.Source(1,new DocumentChunk(UUID.randomUUID(),0,"s","t","section",1,1,0,text.length(),text,3),similarity);
+    }
+    private static String unknownJson() { return "{\"status\":\"INSUFFICIENT_CONTEXT\",\"answer\":\"\",\"quotes\":[]}"; }
+    @Test void validatedAnswerSurvivesJsonHistoryAndReplayWithoutNewCalls() throws Exception {
+        var model=mock(RagAnswerModel.class);
+        when(model.answer(any(),any(),any())).thenReturn(new RagAnswerModel.Result(
+                "{\"status\":\"ANSWERED\",\"answer\":\"Сохраняем требования. [1]\",\"quotes\":[{\"sourceNumber\":1,\"quote\":\"Требования сохраняются в файле\"}]}",metrics));
+        try(var service=service(model)) {
+            when(embeddings.embed(any())).thenReturn(new EmbeddingModel.Result(new float[768],3L));
+            when(repository.search(any(),any(),any(),anyInt())).thenReturn(List.of(source("Требования сохраняются в файле progress.md.",.9)));
+            var request=request(RagQuestion.Mode.WITH_RAG);
+            var result=run(service,request);
+            assertThat(result.status()).isEqualTo("COMPLETED");
+            assertThat(result.answers().getFirst().grounding().status()).isEqualTo("VERIFIED");
+            var mapper=tools.jackson.databind.json.JsonMapper.builder().build();
+            var restored=mapper.readValue(mapper.writeValueAsString(result),RagQuestion.class);
+            assertThat(restored).isEqualTo(result);
+            when(repository.create(eq("alice"),any())).thenReturn(false);
+            when(repository.find("alice",request.id())).thenReturn(Optional.of(restored));
+            assertThat(run(service,request)).isEqualTo(result);
+            verify(model,times(1)).answer(any(),any(),any());
+        }
+    }
+    @Test void weakContextSkipsGenerationAndPersistsRefusal() throws Exception {
+        var model=mock(RagAnswerModel.class);
+        try(var setup=service(model);
+            var service=new RagQuestionService(indexes,repository,embeddings,"embeddinggemma",model,settings,String::length,users,
+                    (question,documents) -> List.of(.1),new RetrievalOptions(1,1,.2))) {
+            when(embeddings.embed(any())).thenReturn(new EmbeddingModel.Result(new float[768],3L));
+            when(repository.search(any(),any(),any(),anyInt())).thenReturn(List.of(source("irrelevant",.9)));
+            var result=run(service,request(RagQuestion.Mode.RERANKED));
+            var answer=result.answers().getFirst();
+            assertThat(result.status()).isEqualTo("COMPLETED");
+            assertThat(answer.text()).contains("Не знаю","Уточните");
+            assertThat(answer.grounding().status()).isEqualTo("INSUFFICIENT_CONTEXT");
+            assertThat(answer.metrics().finishReason()).isEqualTo("not_called");
+            assertThat(answer.sources()).isEmpty();
+            verifyNoInteractions(model);
+        }
+    }
+    @Test void invalidCitationNeverStreamsOrPersistsUnverifiedTextButKeepsCost() throws Exception {
+        var events=new CopyOnWriteArrayList<String>();
+        try(var service=service((system,user,delta) -> {
+            delta.accept("invented secret answer");
+            return new RagAnswerModel.Result("invented secret answer",metrics);
+        })) {
+            when(embeddings.embed(any())).thenReturn(new EmbeddingModel.Result(new float[768],3L));
+            when(repository.search(any(),any(),any(),anyInt())).thenReturn(List.of(source("real source",.9)));
+            var done=new CountDownLatch(1); var saved=new AtomicReference<RagQuestion>();
+            service.start("alice",request(RagQuestion.Mode.WITH_RAG),(event,data) -> {
+                events.add(event);
+                if(event.equals("completed")) { saved.set((RagQuestion)data); done.countDown(); }
+            },()->false);
+            assertThat(done.await(5,TimeUnit.SECONDS)).isTrue();
+            assertThat(events).doesNotContain("delta");
+            var answer=saved.get().answers().getFirst();
+            assertThat(answer.text()).isEmpty();
+            assertThat(answer.error()).contains("проверку");
+            assertThat(answer.metrics().totalTokens()).isEqualTo(30);
+        }
     }
     @Test void incompleteRewriteDoesNotSearchOrGenerateAndPreservesItsUsage() throws Exception {
         var model=mock(RagAnswerModel.class);
