@@ -50,6 +50,15 @@ class RagPostgresTest {
             assertThat(sources.getLast().similarity()).isCloseTo(0,within(.0001));
             assertThat(questions.search("other",id,x,2)).isEmpty();
             assertThat(questions.search(owner,UUID.randomUUID(),x,2)).isEmpty();
+            assertThat(questions.searchAll(owner,"embeddinggemma:latest",x,10)).hasSize(2);
+            assertThat(questions.searchAll("other","embeddinggemma",x,10)).isEmpty();
+            assertThat(questions.searchAll(owner,"different-model",x,10)).isEmpty();
+            var structural=indexes.create(document,DocumentChunk.Strategy.STRUCTURAL,new ChunkingSettings(384,64),"embeddinggemma");
+            var structuralChunk=new DocumentChunk(UUID.randomUUID(),0,"test.pdf","test","structural",1,1,0,2,"ab",1);
+            indexes.prepare(owner,structural,List.of(structuralChunk));
+            indexes.saveEmbedding(owner,structural,0,new com.github.vladsaraykin.aichat.rag.application.EmbeddingModel.Result(x,1L));
+            indexes.finish(owner,structural,1,null);
+            assertThat(questions.searchAll(owner,"embeddinggemma",x,10)).extracting(s->s.chunk().section()).containsExactly("structural");
             var q = new RagQuestion(UUID.randomUUID(),id,"question",RagQuestion.Mode.BOTH,"RUNNING",List.of(),Instant.now());
             assertThat(questions.create(owner,q)).isTrue();
             assertThat(questions.create(owner,q)).isFalse();

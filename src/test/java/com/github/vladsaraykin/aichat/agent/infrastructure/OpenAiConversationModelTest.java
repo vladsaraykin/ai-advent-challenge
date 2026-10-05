@@ -17,6 +17,35 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class OpenAiConversationModelTest {
+    @Test void springAiToolManagerPropagatesApprovalInsteadOfReturningItToTheModel() {
+        var approval = new com.github.vladsaraykin.aichat.mcp.application.McpApprovalService.Required(
+                new com.github.vladsaraykin.aichat.mcp.application.McpApprovalService.Call(
+                        UUID.randomUUID(), "files", "write_file", "{}", "AWAITING_APPROVAL", 1, null));
+        var definition = org.springframework.ai.tool.definition.ToolDefinition.builder()
+                .name("write_file").description("Save a file").inputSchema("{\"type\":\"object\"}").build();
+        var callback = new org.springframework.ai.tool.ToolCallback() {
+            public org.springframework.ai.tool.definition.ToolDefinition getToolDefinition() { return definition; }
+            public String call(String input) { throw approval; }
+        };
+        var prompt = new Prompt("Save the report", OpenAiChatOptions.builder().toolCallbacks(callback).build());
+        var response = new org.springframework.ai.chat.model.ChatResponse(List.of(
+                new org.springframework.ai.chat.model.Generation(
+                        org.springframework.ai.chat.messages.AssistantMessage.builder().content("")
+                                .toolCalls(List.of(new org.springframework.ai.chat.messages.AssistantMessage.ToolCall(
+                                        "call-1", "function", "write_file", "{}"))).build())));
+        var manager = org.springframework.ai.model.tool.DefaultToolCallingManager.builder().build();
+        assertThatThrownBy(() -> manager.executeToolCalls(prompt, response)).isSameAs(approval);
+    }
+
+    @Test void preservesWrappedApprovalThroughStreamingAdapter() {
+        var approval = new com.github.vladsaraykin.aichat.mcp.application.McpApprovalService.Required(
+                new com.github.vladsaraykin.aichat.mcp.application.McpApprovalService.Call(
+                        UUID.randomUUID(), "files", "write_file", "{}", "AWAITING_APPROVAL", 1, null));
+        ChatModel model = mock(ChatModel.class);
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.error(new java.util.concurrent.CompletionException(approval)));
+        assertThatThrownBy(() -> new OpenAiConversationModel(model, CHARACTER_COUNTER)
+                .stream(definition, List.of()).collectList().block()).isSameAs(approval);
+    }
     @Test void memoryUsesJsonModeWithoutChangingNormalChatFormat() {
         var d = new AgentDefinition("architect", "Architect", "Architecture", "gpt-5.6-sol", "Return JSON", 8192,
                 null, 120, 60000, PRICING);

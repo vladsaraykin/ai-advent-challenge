@@ -250,7 +250,11 @@ public class ChatService {
     }
     public Flux<StreamEvent> stream(String ownerId, String agentId, UUID chatId, UUID messageId, String content,
                                     List<String> mcpServerIds) {
-        Agent agent = registry.get(agentId);
+        return stream(ownerId,agentId,chatId,messageId,content,mcpServerIds,null);
+    }
+    public Flux<StreamEvent> stream(String ownerId,String agentId,UUID chatId,UUID messageId,String content,
+                                    List<String> mcpServerIds,com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
+        Agent agent = registry.get(agentId).withRequestContext(context);
         lock(ownerId, chatId);
         if (!calls.tryAcquire()) {
             busyChats.remove(key(ownerId, chatId));
@@ -452,7 +456,7 @@ public class ChatService {
             case PROVIDE_REQUIREMENTS -> "добавьте требования";
             case ANSWER_OPEN_QUESTIONS -> "закройте открытые вопросы";
             case CONFIRM_REQUIREMENTS -> "подтвердите требования";
-            case RECORD_DECISIONS -> "зафиксируйте архитектурные решения";
+            case RECORD_DECISIONS -> "зафиксируйте решения задачи";
             case CONFIRM_DESIGN -> "передайте решение на проверку";
             case VALIDATE_RESULT -> "проверьте результат и подтвердите завершение";
             case RESUME_TASK -> "продолжите задачу";

@@ -3,7 +3,7 @@ package com.github.vladsaraykin.aichat.agent.domain;
 import java.time.Instant;
 import java.util.*;
 
-/** Explicitly confirmed memory for the single owner of this installation, isolated per agent. */
+/** Explicitly confirmed memory, isolated by authenticated owner and agent. */
 public record LongTermMemory(long version, List<Entry> entries, Set<UUID> resolvedProposals) {
     public LongTermMemory(long version, List<Entry> entries) { this(version, entries, Set.of()); }
     public LongTermMemory {

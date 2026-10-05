@@ -14,6 +14,33 @@ import reactor.core.publisher.Mono;
 import static org.assertj.core.api.Assertions.*;
 
 class MemoryLayersTest {
+    @Test void insufficientRagAnswerDoesNotCreateAFalseOpenQuestion() throws Exception {
+        var questionCalls = new AtomicInteger();
+        ConversationModel model = new ConversationModel() {
+            public Reply reply(AgentDefinition definition, List<ChatMessage> messages) { return MemoryLayersTest.reply("ok"); }
+            public reactor.core.publisher.Flux<StreamPart> extractQuestions(AgentDefinition definition, List<ChatMessage> messages) {
+                questionCalls.incrementAndGet();
+                return reactor.core.publisher.Flux.just(StreamPart.completed(MemoryLayersTest.reply(
+                        "{\"questions\":[\"Уточните вопрос или загрузите дополнительные документы.\"]}")));
+            }
+        };
+        var agent = new AgentRegistry(model, "classpath:agents/*.yaml").get("architect");
+        var memory = new WorkingMemory(1, WorkingMemory.Stage.REQUIREMENTS, "", "Исследовать документ",
+                Map.of("sources", "required"), Map.of(), Map.of(), List.of(), List.of(), null, null,
+                WorkingMemory.Status.ACTIVE, null, null);
+        var chat = Chat.create("architect").withWorkingMemory(memory);
+        var user = new ChatMessage(UUID.randomUUID(), ChatMessage.Role.USER, "Вопрос", java.time.Instant.now(), null);
+        var grounding = new com.github.vladsaraykin.aichat.rag.domain.RagQuestion.Grounding(
+                "INSUFFICIENT_CONTEXT", "SOURCES_DO_NOT_ANSWER", List.of());
+        var evidence = new ChatMessage.Evidence(List.of(), grounding, null, null, user.id());
+        var assistant = new ChatMessage(UUID.randomUUID(), ChatMessage.Role.ASSISTANT,
+                com.github.vladsaraykin.aichat.rag.application.GroundedAnswerValidator.UNKNOWN,
+                java.time.Instant.now(), reply("unused").metrics(), evidence);
+
+        assertThat(agent.completeMemory(chat, user, assistant).block()).isEqualTo(memory);
+        assertThat(questionCalls).hasValue(0);
+    }
+
     @Test void assistantQuestionsAreSavedImmediatelyBlockAdvanceAndCanBeAnsweredNextTurn() throws Exception {
         var service = service((d, messages) -> reply(extraction(d) ? EXTRACT
                 : "Нужно уточнить:\n1. Какой email-провайдер?\n2. Уточните способ получения уведомлений.\n"
@@ -170,7 +197,7 @@ class MemoryLayersTest {
         var removed = service.deleteMemory("architect", saved.version(), proposal.id());
         assertThat(removed.entries()).isEmpty();
         assertThat(removed.resolvedProposals()).contains(proposal.id());
-        assertThatThrownBy(() -> service.memory("chef")).hasMessageContaining("не включены");
+        assertThat(service.memory("chef").entries()).isEmpty();
         assertThatThrownBy(() -> service.editTask("chef", second.id(), 0, "", new MemoryService.TaskData("", Map.of(), Map.of(), Map.of(), List.of())))
                 .isInstanceOf(ChatFailure.class);
     }

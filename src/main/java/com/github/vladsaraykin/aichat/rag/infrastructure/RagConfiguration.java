@@ -18,9 +18,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.JdbcTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Explicit, RAG-only persistence; no global datasource or Flyway auto-configuration. */
+/** Shared PostgreSQL storage; required even for chats with RAG switched off. */
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnProperty(prefix = "app.rag", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties({RagProperties.class, com.github.vladsaraykin.aichat.rag.domain.ChunkingSettings.class})
 public class RagConfiguration {
     @Bean
@@ -56,9 +55,8 @@ public class RagConfiguration {
         return new ChunkingService(documents, chunker, tokens, settings);
     }
     @Bean
-    DocumentStore ragDocumentStore(RagProperties properties,
-                                   @Value("${app.rag.documents-directory:data/rag-documents}") String directory) throws IOException {
-        return new LocalDocumentStore(Path.of(directory));
+    DocumentStore ragDocumentStore(@Qualifier("ragJdbcTemplate") JdbcTemplate jdbc) {
+        return new JdbcDocumentStore(jdbc);
     }
 
     @Bean

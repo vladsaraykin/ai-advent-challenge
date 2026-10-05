@@ -2,7 +2,6 @@ package com.github.vladsaraykin.aichat.user.application;
 
 import com.github.vladsaraykin.aichat.agent.application.ChatFailure;
 import com.github.vladsaraykin.aichat.user.domain.*;
-import com.github.vladsaraykin.aichat.user.infrastructure.FileUserRepository;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,7 +16,7 @@ public class UserService {
     }
     public UserProfile register(String username, String password, String displayName) {
         String normalized = username == null ? "" : username.strip().toLowerCase(java.util.Locale.ROOT);
-        FileUserRepository.validateUsername(normalized);
+        UserAccount.validateUsername(normalized);
         if (password == null || password.length() < 8 || password.length() > 200)
             throw new ChatFailure(ChatFailure.Kind.INVALID, "Пароль должен содержать от 8 до 200 символов");
         String name = displayName == null || displayName.isBlank() ? normalized : displayName;

@@ -5,6 +5,9 @@ import java.util.*;
 
 public interface RagQuestionRepository {
     List<RagQuestion.Source> search(String owner, UUID index, float[] vector, int topK);
+    default List<RagQuestion.Source> searchAll(String owner,String embeddingModel,float[] vector,int topK) {
+        throw new UnsupportedOperationException("Corpus search not supported");
+    }
     boolean create(String owner, RagQuestion question);
     void save(String owner, RagQuestion question);
     Optional<RagQuestion> find(String owner, UUID id);

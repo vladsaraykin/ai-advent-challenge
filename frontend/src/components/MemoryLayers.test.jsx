@@ -52,7 +52,7 @@ describe('explicit memory layers', () => {
     await screen.findByText('Пока ничего не сохранено.')
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить требования' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Память уже изменилась')
-    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Planning · сбор требований')
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Planning · планирование')
     await userEvent.click(screen.getByRole('button', { name: 'Обновить память' }))
     await waitFor(() => expect(api.chat).toHaveBeenCalledWith('architect', 'chat'))
   })
@@ -69,7 +69,7 @@ describe('explicit memory layers', () => {
 
     expect(await within(controls).findByRole('alert')).toHaveTextContent('Сначала зафиксируйте архитектурные решения.')
     expect(api.advanceTask).toHaveBeenCalledWith('architect', 'chat', 3)
-    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Execution · проектирование')
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Execution · выполнение')
     expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Подготовить архитектурные решения')
   })
   it('pauses and resumes the formal task state without changing its stage', async () => {

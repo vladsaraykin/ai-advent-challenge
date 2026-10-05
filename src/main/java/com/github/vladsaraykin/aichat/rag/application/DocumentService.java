@@ -58,7 +58,13 @@ public class DocumentService {
                     stored != null && persistenceAttempted);
             if (exception instanceof RagFailure failure) throw failure;
             throw RagFailure.storage();
-        } finally { extractionSlot.release(); }
+        } finally {
+            try {
+                if (stored != null) store.release(stored);
+            } finally {
+                extractionSlot.release();
+            }
+        }
     }
 
     public List<RagDocument.Summary> list(String owner, int limit, int offset) {

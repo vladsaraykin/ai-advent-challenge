@@ -12,7 +12,12 @@ public final class MemoryService {
                     + "[^.]*?(?:на\\s+текущем\\s+этапе|до\\s+(?:перехода|подтверждения\\s+(?:требований|плана)))\\.?$");
     private MemoryService() { }
     public record TaskData(String goal, Map<String, String> requirements, Map<String, String> constraints,
-                           Map<String, String> decisions, List<String> openQuestions) { }
+                           Map<String, String> decisions, List<String> openQuestions, Map<String,String> terms) {
+        public TaskData(String goal, Map<String,String> requirements, Map<String,String> constraints,
+                        Map<String,String> decisions, List<String> openQuestions) {
+            this(goal,requirements,constraints,decisions,openQuestions,null);
+        }
+    }
     public static WorkingMemory update(WorkingMemory old, TaskData data, String projectKey,
                                        List<WorkingMemory.Proposal> proposals, ChatMessage.Metrics metrics) {
         old = withoutTemporaryWorkflow(old);
@@ -22,12 +27,13 @@ public final class MemoryService {
         }
         var candidate = new WorkingMemory(old.version() + 1, old.stage(), projectKey, data.goal(),
                 data.requirements(), data.constraints(), data.decisions(), data.openQuestions(), proposals,
-                old.usage(), metrics == null ? old.lastExtraction() : metrics, old.status(), null, null);
+                old.usage(), metrics == null ? old.lastExtraction() : metrics, old.status(), null, null,
+                data.terms()==null ? old.terms() : data.terms());
         var usage = metrics == null ? old.usage() : ContextSummary.ArchivedUsage.add(old.usage(), List.of(
                 new ChatMessage(UUID.randomUUID(), ChatMessage.Role.ASSISTANT, "", java.time.Instant.now(), metrics)));
         candidate = new WorkingMemory(candidate.version(), candidate.stage(), candidate.projectKey(), candidate.goal(), candidate.requirements(),
                 candidate.constraints(), candidate.decisions(), candidate.openQuestions(), candidate.proposals(), usage,
-                candidate.lastExtraction(), candidate.status(), null, null);
+                candidate.lastExtraction(), candidate.status(), null, null, candidate.terms());
         return STATE_MACHINE.transition(old, candidate, TaskStateMachine.Event.TASK_DATA_UPDATED);
     }
     public static void checkVersion(long actual, long expected) {
@@ -88,7 +94,7 @@ public final class MemoryService {
 
     private static TaskData sanitize(TaskData data) {
         return new TaskData(sanitizeGoal(data.goal()), durable(data.requirements()), durable(data.constraints()),
-                durable(data.decisions()), data.openQuestions());
+                durable(data.decisions()), data.openQuestions(), data.terms());
     }
 
     private static WorkingMemory withoutTemporaryWorkflow(WorkingMemory memory) {
@@ -100,7 +106,7 @@ public final class MemoryService {
         }
         return new WorkingMemory(memory.version(), memory.stage(), memory.projectKey(), sanitized.goal(),
                 sanitized.requirements(), sanitized.constraints(), sanitized.decisions(), sanitized.openQuestions(),
-                memory.proposals(), memory.usage(), memory.lastExtraction(), memory.status(), null, null);
+                memory.proposals(), memory.usage(), memory.lastExtraction(), memory.status(), null, null, memory.terms());
     }
 
     private static Map<String, String> durable(Map<String, String> values) {
@@ -128,6 +134,6 @@ public final class MemoryService {
         return new WorkingMemory(memory.version() + 1, memory.stage(), memory.projectKey(), memory.goal(), memory.requirements(),
                 memory.constraints(), memory.decisions(), memory.openQuestions(),
                 memory.proposals().stream().filter(p -> !p.id().equals(proposalId)).toList(), memory.usage(), memory.lastExtraction(),
-                memory.status(), null, null);
+                memory.status(), null, null, memory.terms());
     }
 }

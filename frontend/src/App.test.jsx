@@ -43,12 +43,12 @@ describe('agent conversations', () => {
     api.ragDocuments = vi.fn().mockResolvedValue([])
     render(<App api={api} />)
     await screen.findByRole('heading', { name: 'Архитектор ПО' })
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Агенты', 'MCP', 'RAG'])
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Чат', 'RAG', 'MCP'])
     await userEvent.click(screen.getByRole('tab', { name: 'RAG' }))
-    expect(await screen.findByRole('heading', { name: 'Лаборатория RAG' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Документы и индексы' })).toBeInTheDocument()
     expect(await screen.findByText(/Загрузите первый документ/)).toBeInTheDocument()
     expect(api.create).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('tab', { name: 'Агенты' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Чат' }))
     expect(screen.getByRole('heading', { name: 'Архитектор ПО' })).toBeInTheDocument()
   })
   it('sends tools from multiple selected servers and retains selection for retry', async () => {
@@ -96,7 +96,7 @@ describe('agent conversations', () => {
     expect(screen.getByText('Read a text file from an allowed directory.')).toBeInTheDocument()
     expect(screen.getByText('Подключён')).toBeInTheDocument()
     expect(api.mcpServers).toHaveBeenCalledTimes(1)
-    await userEvent.click(screen.getByRole('tab', { name: 'Агенты' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Чат' }))
     expect(await screen.findByRole('heading', { name: 'С чего начнём?' })).toBeInTheDocument()
   })
 
@@ -120,7 +120,7 @@ describe('agent conversations', () => {
     await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Найди заказ 42')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
 
-    expect(await screen.findByText('Модель выбирает и выполняет MCP-инструменты…')).toBeInTheDocument()
+    expect(await screen.findByText('Модель выбирает MCP-инструмент…')).toBeInTheDocument()
     expect(api.sendStream.mock.calls[0][2]).toEqual(expect.objectContaining({
       content: 'Найди заказ 42', mcpServerIds: ['custom-tools']
     }))

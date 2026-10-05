@@ -154,4 +154,51 @@ class LifecycleGuardTest {
         assertThat(result.violation().code()).isEqualTo("PREMATURE_EXECUTION");
         assertThat(result.violation().evidence()).isEqualTo("Напиши код");
     }
+
+    @Test void configuredAgentIgnoresPrematureExecutionBlockAfterRequirementsAreConfirmed() {
+        ConversationModel model = new ConversationModel() {
+            public Reply reply(AgentDefinition ignored, List<ChatMessage> messages) { throw new UnsupportedOperationException(); }
+            @Override public Flux<StreamPart> checkLifecycle(AgentDefinition ignored, List<ChatMessage> messages) {
+                return Flux.just(StreamPart.completed(new Reply("""
+                        {"result":"BLOCK","violation":{"code":"PREMATURE_EXECUTION",
+                        "evidence":"Какие работы перечислены","explanation":"Ошибка: требования якобы не подтверждены."}}
+                        """, metrics())));
+            }
+        };
+        Chat chat = Chat.create("architect").withWorkingMemory(
+                new WorkingMemory(2, WorkingMemory.Stage.DESIGN, "project", "Исследовать документ",
+                        Map.of("scope", "90 дней"), Map.of(), Map.of(), List.of(), List.of(),
+                        ContextSummary.ArchivedUsage.empty(), null, WorkingMemory.Status.ACTIVE,
+                        null, null, Map.of()));
+        var user = new ChatMessage(UUID.randomUUID(), ChatMessage.Role.USER,
+                "Какие работы перечислены", Instant.now(), null);
+
+        var check = new ConfiguredAgent(definition(), model).checkLifecycle(chat, user, null).block();
+
+        assertThat(check.allowed()).isTrue();
+        assertThat(check.metrics()).isEqualTo(metrics());
+    }
+
+    @Test void configuredAgentDoesNotTreatResearchQuestionAsPrematureExecution() {
+        ConversationModel model = new ConversationModel() {
+            public Reply reply(AgentDefinition ignored, List<ChatMessage> messages) { throw new UnsupportedOperationException(); }
+            @Override public Flux<StreamPart> checkLifecycle(AgentDefinition ignored, List<ChatMessage> messages) {
+                return Flux.just(StreamPart.completed(new Reply("""
+                        {"result":"BLOCK","violation":{"code":"PREMATURE_EXECUTION",
+                        "evidence":"Какие работы перечислены","explanation":"Ошибочно принято за итог выполнения."}}
+                        """, metrics())));
+            }
+        };
+        Chat chat = Chat.create("architect").withWorkingMemory(
+                new WorkingMemory(1, WorkingMemory.Stage.REQUIREMENTS, "project", "Исследовать документ",
+                        Map.of("scope", "90 дней"), Map.of(), Map.of(), List.of(), List.of(),
+                        ContextSummary.ArchivedUsage.empty(), null, WorkingMemory.Status.ACTIVE,
+                        null, null, Map.of()));
+        var user = new ChatMessage(UUID.randomUUID(), ChatMessage.Role.USER,
+                "Какие работы перечислены для дней 0–14?", Instant.now(), null);
+
+        var check = new ConfiguredAgent(definition(), model).checkLifecycle(chat, user, null).block();
+
+        assertThat(check.allowed()).isTrue();
+    }
 }

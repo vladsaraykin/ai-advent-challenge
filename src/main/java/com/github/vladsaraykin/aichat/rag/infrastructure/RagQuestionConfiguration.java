@@ -18,6 +18,9 @@ public class RagQuestionConfiguration {
     @Bean RagQuestionRepository ragQuestionRepository(@Qualifier("ragJdbcTemplate") JdbcTemplate jdbc) { return new JdbcRagQuestionRepository(jdbc); }
     @Bean RagAnswerModel ragAnswerModel(ChatModel model, RagAnswerSettings settings) { return new OpenAiRagAnswerModel(model,settings); }
     @Bean(destroyMethod="close") HttpReranker ragReranker(RerankerSettings settings) { return new HttpReranker(settings); }
+    @Bean RagSourceSelector ragSourceSelector(ChunkTokenEstimator tokens,RagAnswerSettings settings) {
+        return new RagSourceSelector(tokens,settings.maxContextTokens());
+    }
     @Bean(destroyMethod="close") RagQuestionService ragQuestionService(IndexRepository indexes, RagQuestionRepository repository,
             EmbeddingModel embeddings, RagProperties properties, RagAnswerModel model, RagAnswerSettings settings,
             ChunkTokenEstimator tokens, UserRepository users, HttpReranker reranker, RerankerSettings ranking) {

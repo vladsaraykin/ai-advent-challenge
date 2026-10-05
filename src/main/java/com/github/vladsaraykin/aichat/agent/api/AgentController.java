@@ -20,7 +20,13 @@ import reactor.core.publisher.Flux;
 @RequestMapping("/api/agents")
 public class AgentController {
     private final ChatService service;
-    public AgentController(ChatService service) { this.service = service; }
+    private final com.github.vladsaraykin.aichat.harness.application.HarnessService harness;
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentController(ChatService service, com.github.vladsaraykin.aichat.harness.application.HarnessService harness) {
+        this.service = service;
+        this.harness = harness;
+    }
+    public AgentController(ChatService service) { this(service, null); }
     private static String owner(Principal principal) { return principal == null ? ChatRepository.LEGACY_OWNER : principal.getName(); }
     public record AgentView(String id, String name, String description, String model, int maxCompletionTokens,
                             boolean contextCompression, int recentMessages, int summaryBatchSize,
@@ -73,6 +79,10 @@ public class AgentController {
     public void delete(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId) { service.delete(owner(principal), agentId, chatId); }
     @PostMapping("/{agentId}/chats/{chatId}/messages")
     public Chat send(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId, @Valid @RequestBody SendRequest request) {
+        if (harness != null) {
+            throw new ChatFailure(ChatFailure.Kind.INVALID,
+                    "Используйте потоковый чат /api/harness: он учитывает RAG и подтверждение MCP.");
+        }
         return service.send(owner(principal), agentId, chatId, request.messageId(), request.content().strip(),
                 normalizedMcp(request.mcpServerIds()));
     }
@@ -80,6 +90,11 @@ public class AgentController {
     @PostMapping(value = "/{agentId}/chats/{chatId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<Flux<ServerSentEvent<Object>>> stream(Principal principal, @PathVariable String agentId,
             @PathVariable UUID chatId, @Valid @RequestBody SendRequest request) {
+        if (harness != null) {
+            return ResponseEntity.ok().header("X-Accel-Buffering", "no").body(
+                    harness.stream(owner(principal), agentId, chatId, request.messageId(), request.content().strip())
+                            .map(event -> ServerSentEvent.builder(event.data()).event(event.type()).build()));
+        }
         Flux<ServerSentEvent<Object>> events = service.stream(owner(principal), agentId, chatId, request.messageId(),
                         request.content().strip(), normalizedMcp(request.mcpServerIds()))
                 .map(event -> ServerSentEvent.builder((Object) event)

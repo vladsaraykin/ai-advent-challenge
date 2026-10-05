@@ -8,7 +8,15 @@ public record WorkingMemory(long version, Stage stage, String projectKey, String
                             Map<String, String> decisions, List<String> openQuestions,
                             List<Proposal> proposals, ContextSummary.ArchivedUsage usage,
                             ChatMessage.Metrics lastExtraction, Status status,
-                            String currentStep, ExpectedAction expectedAction) {
+                            String currentStep, ExpectedAction expectedAction, Map<String,String> terms) {
+    public WorkingMemory(long version, Stage stage, String projectKey, String goal,
+                         Map<String,String> requirements, Map<String,String> constraints,
+                         Map<String,String> decisions, List<String> openQuestions, List<Proposal> proposals,
+                         ContextSummary.ArchivedUsage usage, ChatMessage.Metrics lastExtraction, Status status,
+                         String currentStep, ExpectedAction expectedAction) {
+        this(version,stage,projectKey,goal,requirements,constraints,decisions,openQuestions,proposals,
+                usage,lastExtraction,status,currentStep,expectedAction,Map.of());
+    }
     public enum Stage { REQUIREMENTS, DESIGN, REVIEW, DONE }
     public enum Status { ACTIVE, PAUSED }
     public enum ExpectedAction {
@@ -30,6 +38,7 @@ public record WorkingMemory(long version, Stage stage, String projectKey, String
         projectKey = text(projectKey, 80); goal = text(goal, 1000);
         if (!projectKey.isEmpty() && !projectKey.matches("[a-zA-Z0-9_-]{1,80}")) throw new IllegalArgumentException("Invalid project key");
         requirements = boundedMap(requirements); constraints = boundedMap(constraints); decisions = boundedMap(decisions);
+        terms = boundedMap(terms);
         openQuestions = openQuestions == null ? List.of() : openQuestions;
         if (openQuestions.size() > 20) throw new IllegalArgumentException("Too many questions");
         openQuestions.forEach(q -> {
@@ -61,11 +70,11 @@ public record WorkingMemory(long version, Stage stage, String projectKey, String
     public static WorkingMemory empty() { return new WorkingMemory(0, null, "", "", null, null, null, null, null, null, null, null, null, null); }
     public WorkingMemory inherited() {
         return new WorkingMemory(0, stage, projectKey, goal, requirements, constraints, decisions, openQuestions,
-                List.of(), null, null, status, null, null);
+                List.of(), null, null, status, null, null, terms);
     }
     public WorkingMemory withoutResolved(Set<UUID> ids) {
         return new WorkingMemory(version, stage, projectKey, goal, requirements, constraints, decisions, openQuestions,
-                proposals.stream().filter(p -> !ids.contains(p.id())).toList(), usage, lastExtraction, status, null, null);
+                proposals.stream().filter(p -> !ids.contains(p.id())).toList(), usage, lastExtraction, status, null, null, terms);
     }
     private static ExpectedAction expected(Status status, Stage stage, String goal,
                                            Map<String, String> requirements, List<String> questions,
@@ -88,8 +97,8 @@ public record WorkingMemory(long version, Stage stage, String projectKey, String
             case PROVIDE_REQUIREMENTS -> "Собрать требования и ограничения";
             case ANSWER_OPEN_QUESTIONS -> "Закрыть открытые вопросы";
             case CONFIRM_REQUIREMENTS -> "Согласовать план задачи";
-            case RECORD_DECISIONS -> "Подготовить архитектурные решения";
-            case CONFIRM_DESIGN -> "Зафиксировать результат проектирования";
+            case RECORD_DECISIONS -> "Зафиксировать решения задачи";
+            case CONFIRM_DESIGN -> "Зафиксировать результат выполнения";
             case VALIDATE_RESULT -> "Проверить решение и закрыть замечания";
             case RESUME_TASK -> switch (stage) {
                 case REQUIREMENTS -> "Планирование приостановлено";

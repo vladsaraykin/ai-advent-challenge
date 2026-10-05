@@ -16,6 +16,7 @@ public final class TaskStateMachine {
                         || !before.projectKey().equals(candidate.projectKey())
                         || !before.requirements().equals(candidate.requirements())
                         || !before.constraints().equals(candidate.constraints())
+                        || !before.terms().equals(candidate.terms())
                         || !before.openQuestions().equals(candidate.openQuestions());
                 if (requirementsChanged) stage = WorkingMemory.Stage.REQUIREMENTS;
                 else if (!before.decisions().equals(candidate.decisions())
@@ -52,7 +53,7 @@ public final class TaskStateMachine {
             case REQUIREMENTS -> WorkingMemory.Stage.DESIGN;
             case DESIGN -> {
                 if (memory.decisions().isEmpty()) {
-                    throw new ChatFailure(ChatFailure.Kind.INVALID, "Сначала зафиксируйте архитектурные решения.");
+                    throw new ChatFailure(ChatFailure.Kind.INVALID, "Сначала зафиксируйте решения задачи.");
                 }
                 yield WorkingMemory.Stage.REVIEW;
             }
@@ -65,6 +66,6 @@ public final class TaskStateMachine {
                                WorkingMemory.Status status) {
         return new WorkingMemory(version, stage, value.projectKey(), value.goal(), value.requirements(),
                 value.constraints(), value.decisions(), value.openQuestions(), value.proposals(), value.usage(),
-                value.lastExtraction(), status, null, null);
+                value.lastExtraction(), status, null, null, value.terms());
     }
 }

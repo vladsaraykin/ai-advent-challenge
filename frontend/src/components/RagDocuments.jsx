@@ -10,11 +10,17 @@ function ErrorNotice({ message, retry }) {
     {retry && <button onClick={retry}>Повторить загрузку</button>}</div>
 }
 
-export default function RagDocuments({ api, profile, onProfile, onLogout }) {
+export default function RagDocuments({ api, profile, onProfile, onLogout, embedded = false }) {
   const [documents, setDocuments] = useState([])
+  const [stats, setStats] = useState(null)
   const [selected, setSelected] = useState('')
   const [offset, setOffset] = useState(0)
   const [revision, setRevision] = useState(0)
+  useEffect(() => {
+    let active = true
+    if (api.knowledgeStats) api.knowledgeStats().then(value => { if (active) setStats(value) }).catch(() => { if (active) setStats(null) })
+    return () => { active = false }
+  }, [api, revision])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [file, setFile] = useState(null)
@@ -54,11 +60,15 @@ export default function RagDocuments({ api, profile, onProfile, onLogout }) {
   }
 
   return <section className="rag-page" aria-labelledby="rag-title">
-    <header className="conversation-header"><div><span className="eyebrow">День 21 · Индексация документов</span>
-      <h1 id="rag-title">Лаборатория RAG</h1><p>Документ → чанки → эмбеддинги → PostgreSQL</p></div>
-      <UserProfile api={api} profile={profile} onProfile={onProfile} onLogout={onLogout} disabled={uploading} />
+    <header className="conversation-header"><div><span className="eyebrow">База знаний</span>
+      <h1 id="rag-title">Документы и индексы</h1><p>Загрузите и проиндексируйте документы для использования в чате.</p></div>
+      {!embedded && <UserProfile api={api} profile={profile} onProfile={onProfile} onLogout={onLogout} disabled={uploading} />}
     </header>
     <div className="rag-content">
+      {stats && <div className="knowledge-stats" aria-label="Статистика базы знаний">
+        <div><strong>{stats.documents}</strong><span>документов</span></div><div><strong>{stats.completedIndexes}</strong><span>готовых индексов</span></div>
+        <div><strong>{stats.chunks}</strong><span>чанков в PostgreSQL</span></div><div><strong>{(stats.fileBytes / 1048576).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МиБ</strong><span>оригиналы файлов</span></div>
+      </div>}
       <form className="rag-panel rag-upload" onSubmit={upload}>
         <div><h2>1. Загрузите документ</h2><p>Один PDF или Word до 20 МиБ. Для сканов OCR не предусмотрен. Документы доступны только вашему профилю.</p></div>
         <label>Файл документа<input ref={input} type="file" accept=".pdf,.doc,.docx" disabled={uploading}
@@ -79,12 +89,12 @@ export default function RagDocuments({ api, profile, onProfile, onLogout }) {
           <button disabled={documents.length < 20 || loading} onClick={() => { setSelected(''); setOffset(value => value + 20) }}>Следующие документы</button></div>
       </div>}
       {!loading && !error && !selected && <p className="rag-empty">Загрузите первый документ, чтобы увидеть его текст и две стратегии индексации.</p>}
-      {selected && !error && <DocumentWorkspace key={selected} api={api} id={selected} />}
+      {selected && !error && <DocumentWorkspace key={selected} api={api} id={selected} experiments={!embedded} />}
     </div>
   </section>
 }
 
-function DocumentWorkspace({ api, id }) {
+function DocumentWorkspace({ api, id, experiments }) {
   const [document, setDocument] = useState(null)
   const [runs, setRuns] = useState([])
   const [error, setError] = useState('')
@@ -180,6 +190,6 @@ function DocumentWorkspace({ api, id }) {
       disabled={!document || !!starting || runsLoading || !!runError} starting={starting === strategy} onStart={() => start(strategy)} />)}</div>
     <p className="rag-note">Готовым считается только COMPLETED-индекс. Токены включают успешно сохранённые эмбеддинги.
       Оценку качества вы выполняете самостоятельно.</p>
-    {api.ragAnswerSettings && <RagQuestions api={api} indexes={runs.filter(run => run.status === 'COMPLETED')} />}
+    {experiments && api.ragAnswerSettings && <RagQuestions api={api} indexes={runs.filter(run => run.status === 'COMPLETED')} />}
   </div>
 }

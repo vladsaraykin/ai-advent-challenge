@@ -3,17 +3,17 @@ import { newMessageId } from '../messageId'
 import { formatTokens, formatUsd } from '../usage'
 
 const stages = {
-  REQUIREMENTS: 'Planning · сбор требований', DESIGN: 'Execution · проектирование',
+  REQUIREMENTS: 'Planning · планирование', DESIGN: 'Execution · выполнение',
   REVIEW: 'Validation · проверка', DONE: 'Done · завершено'
 }
 const actions = { REQUIREMENTS: 'Подтвердить требования', DESIGN: 'Передать на проверку', REVIEW: 'Подтвердить завершение' }
 const expectedActions = {
   DEFINE_GOAL: 'Опишите цель задачи', PROVIDE_REQUIREMENTS: 'Добавьте требования',
   ANSWER_OPEN_QUESTIONS: 'Ответьте на открытые вопросы', CONFIRM_REQUIREMENTS: 'Подтвердите требования',
-  RECORD_DECISIONS: 'Зафиксируйте архитектурные решения', CONFIRM_DESIGN: 'Передайте решение на проверку',
+  RECORD_DECISIONS: 'Зафиксируйте решения задачи', CONFIRM_DESIGN: 'Передайте решение на проверку',
   VALIDATE_RESULT: 'Проверьте результат и подтвердите завершение', RESUME_TASK: 'Продолжите задачу', NONE: 'Действий не требуется'
 }
-const taskFields = { requirements: 'Требования', constraints: 'Ограничения', decisions: 'Подтверждённые решения' }
+const taskFields = { requirements: 'Уточнения и требования', constraints: 'Ограничения', terms: 'Термины', decisions: 'Подтверждённые решения' }
 const blankEntry = () => ({ id: newMessageId(), scope: 'GLOBAL', projectKey: '', key: '', value: '' })
 
 export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBusy }) {
@@ -56,18 +56,19 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
     setTaskEdit({ version: working?.version || 0, projectKey: working?.projectKey || '', goal: working?.goal || '',
       requirements: JSON.stringify(working?.requirements || {}, null, 2),
       constraints: JSON.stringify(working?.constraints || {}, null, 2),
+      terms: JSON.stringify(working?.terms || {}, null, 2),
       decisions: JSON.stringify(working?.decisions || {}, null, 2), openQuestions: (working?.openQuestions || []).join('\n') })
   }
   const entries = memory?.entries || []
   const proposals = (working?.proposals || []).filter(p => !(memory?.resolvedProposals || []).includes(p.id) && !entries.some(e => e.id === p.id))
   const recent = chat?.strategy === 'SLIDING_WINDOW' ? agent.slidingMessages
     : chat?.strategy === 'FACTS' ? agent.factsMessages : null
-  return <section className="memory-layers" aria-label="Слои памяти архитектора">
+  return <section className="memory-layers" aria-label="Слои памяти агента">
     <div className="memory-heading"><h2>Состояние и память</h2>
       <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
         {expanded ? 'Свернуть память' : 'Показать память'}</button></div>
     <div hidden={!expanded}>
-    <p>Личный режим: один владелец приложения. Подтверждённая долговременная память доступна в других чатах этого агента.</p>
+    <p>Память изолирована по пользователю. Подтверждённые знания доступны в других чатах этого агента.</p>
     <details><summary>1. Краткосрочная — текущий диалог</summary>
       <p>Сообщений с сохранённым текстом: {chat?.messages?.length || 0}. В контекст диалога попадёт: {recent
         ? Math.min(recent, chat?.messages?.length || 0) : chat?.messages?.length || 0} + новое сообщение.

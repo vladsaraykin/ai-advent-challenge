@@ -97,7 +97,7 @@ public record Chat(UUID id, String agentId, String title, Instant createdAt,
                 List.of(child(first, checkpoint), child(second, checkpoint)));
     }
     private Chat child(String name, UUID checkpoint) {
-        var inherited = messages.stream().map(m -> new ChatMessage(m.id(), m.role(), m.content(), m.createdAt(), null)).toList();
+        var inherited = messages.stream().map(m -> new ChatMessage(m.id(), m.role(), m.content(), m.createdAt(), null,m.evidence())).toList();
         Instant now = Instant.now();
         return new Chat(UUID.randomUUID(), agentId, name, now, now, null, inherited, strategy,
                 ContextMemory.empty(), id, checkpoint, List.of(), false, workingMemory.inherited(), invariants.inherited(), lifecycle.inherited());

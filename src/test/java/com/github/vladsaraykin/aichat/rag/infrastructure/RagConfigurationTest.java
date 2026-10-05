@@ -12,13 +12,12 @@ class RagConfigurationTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(RagConfiguration.class);
 
-    @Test void disabledByDefaultWithoutDatabaseOrOllama() {
+    @Test void postgresIsRequiredEvenWhenRagIsDisabled() {
         runner.run(context -> {
-            assertThat(context).hasNotFailed().doesNotHaveBean(DataSource.class)
-                    .doesNotHaveBean(RagProperties.class);
+            assertThat(context).hasFailed();
         });
         runner.withPropertyValues("app.rag.enabled=false").run(context ->
-                assertThat(context).hasNotFailed().doesNotHaveBean(DataSource.class));
+                assertThat(context).hasFailed());
     }
 
     @Test void enabledRequiresCredentialsBeforeConnecting() {

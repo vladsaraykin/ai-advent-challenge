@@ -104,6 +104,18 @@ public class OpenAiConversationModel implements ConversationModel {
         return streamCall(definition, summary, messages, prompt(definition, summary, messages, true),
                 definition.systemPrompt(), "llm_stream", mcpServerIds);
     }
+    @Override public Flux<StreamPart> stream(AgentDefinition definition,ContextSummary summary,List<ChatMessage> messages,
+            List<String> mcpServerIds,com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
+        return streamCall(definition,summary,messages,prompt(definition,summary,messages,true),
+                definition.systemPrompt(),"llm_stream",mcpServerIds,context);
+    }
+    @Override public List<com.github.vladsaraykin.aichat.rag.domain.RagQuestion.Source> toolSources(
+            com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
+        return mcpTools==null ? List.of() : mcpTools.sources(context);
+    }
+    @Override public void recordUsage(com.github.vladsaraykin.aichat.harness.domain.RequestContext context,ChatMessage.Metrics metrics) {
+        if(mcpTools!=null) mcpTools.usage(context,metrics);
+    }
 
     @Override public Flux<StreamPart> extractFacts(AgentDefinition definition, List<ChatMessage> messages) {
         return streamCall(definition, null, messages, prompt(definition, null, messages, true),
@@ -145,6 +157,11 @@ public class OpenAiConversationModel implements ConversationModel {
     private Flux<StreamPart> streamCall(AgentDefinition definition, ContextSummary summary,
                                         List<ChatMessage> messages, Prompt request,
                                         String systemPrompt, String operation, List<String> mcpServerIds) {
+        return streamCall(definition,summary,messages,request,systemPrompt,operation,mcpServerIds,null);
+    }
+    private Flux<StreamPart> streamCall(AgentDefinition definition,ContextSummary summary,List<ChatMessage> messages,
+            Prompt request,String systemPrompt,String operation,List<String> mcpServerIds,
+            com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
         return Flux.defer(() -> {
             long started = System.nanoTime();
             var text = new StringBuilder();
@@ -156,7 +173,7 @@ public class OpenAiConversationModel implements ConversationModel {
             var callbacks = mcpTools == null
                     ? (mcpServerIds == null || mcpServerIds.isEmpty() ? List.<org.springframework.ai.tool.ToolCallback>of()
                             : throwMissingMcpService())
-                    : mcpTools.callbacks(mcpServerIds);
+                    : context==null ? mcpTools.callbacks(mcpServerIds) : mcpTools.callbacks(mcpServerIds,context);
             log.info("{}_started agentId={} model={} contextMessages={} mcpServers={} availableTools={}",
                     operation, definition.id(), definition.model(), request.getInstructions().size(),
                     mcpServerIds, callbacks.size());
@@ -219,7 +236,10 @@ public class OpenAiConversationModel implements ConversationModel {
     }
 
     private RuntimeException providerFailure(AgentDefinition definition, Throwable exception, String operation) {
-        if (exception instanceof ChatFailure failure) return failure;
+        Throwable cause=exception;
+        for(int i=0;i<20 && cause!=null;i++,cause=cause.getCause()) {
+            if(cause instanceof ChatFailure failure) return failure;
+        }
         log.warn("{}_failed agentId={} model={} errorType={}", operation, definition.id(),
                 definition.model(), exception.getClass().getSimpleName());
         return new ChatFailure(ChatFailure.Kind.PROVIDER, "Не удалось получить ответ от OpenAI. Попробуйте ещё раз.");

@@ -1,7 +1,7 @@
 export default function MessageComposer({ draft, onChange, onSubmit, pending, disabled, mcpServers = [],
-  mcpEnabled = false, mcpServerIds = [], onMcpEnabled = () => {}, onMcpServer = () => {} }) {
+  mcpEnabled = false, mcpServerIds = [], onMcpEnabled = () => {}, onMcpServer = () => {}, showMcpControls = true }) {
   return <form className="composer" onSubmit={onSubmit}>
-    <div className="mcp-composer-controls">
+    {showMcpControls && <div className="mcp-composer-controls">
       <label className="mcp-toggle"><input type="checkbox" checked={mcpEnabled}
         disabled={pending || disabled || !mcpServers.length}
         onChange={event => onMcpEnabled(event.target.checked)} />
@@ -17,7 +17,7 @@ export default function MessageComposer({ draft, onChange, onSubmit, pending, di
         </label>)}
       </fieldset>}
       {!mcpServers.length && <small>MCP-серверы с инструментами не подключены</small>}
-    </div>
+    </div>}
     <label htmlFor="message">Ваше сообщение</label>
     <textarea id="message" rows="3" value={draft} maxLength={12000} disabled={pending || disabled}
       placeholder="Опишите задачу или задайте уточняющий вопрос…"

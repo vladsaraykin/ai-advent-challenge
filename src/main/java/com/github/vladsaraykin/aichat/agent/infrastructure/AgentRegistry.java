@@ -21,10 +21,15 @@ public class AgentRegistry implements AgentCatalog {
         Arrays.sort(resources, Comparator.comparing(resource -> Objects.toString(resource.getFilename(), "")));
         if (resources.length == 0) throw new IllegalArgumentException("No agent YAML files found");
         Map<String, Agent> loaded = new LinkedHashMap<>();
+        var sharedYaml = new YamlPropertiesFactoryBean();
+        sharedYaml.setResources(new org.springframework.core.io.ClassPathResource("agent-defaults.yaml"));
+        Properties shared = Objects.requireNonNull(sharedYaml.getObject());
         for (var resource : resources) {
             var yaml = new YamlPropertiesFactoryBean();
             yaml.setResources(resource);
-            Properties properties = Objects.requireNonNull(yaml.getObject());
+            Properties properties = new Properties();
+            shared.forEach((key,value) -> properties.setProperty(key.toString(), Objects.toString(value)));
+            Objects.requireNonNull(yaml.getObject()).forEach((key,value) -> properties.setProperty(key.toString(), Objects.toString(value)));
             var definition = new AgentDefinition(properties.getProperty("id"), properties.getProperty("name"),
                     properties.getProperty("description"), properties.getProperty("model"),
                     properties.getProperty("system-prompt"),

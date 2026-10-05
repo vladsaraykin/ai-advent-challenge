@@ -4,10 +4,11 @@
 
 - The application implements only the current AI Advent challenge task. Do not keep earlier challenge screens or backend feature code unless explicitly requested.
 - Keep the OpenAI API key and provider access on the backend. Never expose credentials to React or log full prompts by default.
-- Day 12 adds authenticated user profiles and personalization on top of the Day 11 memory layers. Keep the four per-chat context strategies (Summary, Sliding Window, Sticky Facts and Branching), SSE streaming and token/USD accounting. The user performs qualitative comparisons; do not add automated answer scoring.
-- Day 20 adds multi-server MCP orchestration to the authenticated agent chat. Keep MCP credentials, process configuration and filesystem roots on the backend. Normal chat is the default; the user explicitly selects up to eight connected servers for a request. Reject ambiguous tool names and bound tool execution to 24 calls per request.
-- Day 23 adds independent RAG experiments: baseline, reranker and rewrite + reranker. Scope retrieval to the authenticated user's selected completed index. Persist retrieval parameters, candidate scores/decisions, sources and rewrite usage. Compare quality manually; never silently fall back when reranker fails.
-- Day 24 requires structured RAG answers with server-validated source references and verbatim quotes. Withhold raw structured output until validation; preserve provider usage on validation failure. Empty eligible context returns an explicit insufficient-context answer without generation. Quote presence is not semantic entailment; quality comparison remains manual.
+- Day 25 unifies agent chat, memory, MCP and RAG in one harness. Keep Chat / RAG / MCP tabs, authenticated profiles, the four context strategies, SSE and token/USD accounting. Quality comparisons remain manual.
+- Persist all user-owned application data in PostgreSQL: accounts/profiles, complete transcripts, task/long-term memory, chat settings, request usage, MCP approvals/results, document originals, chunks and embeddings. Do not import or automatically delete previous filesystem data. YAML configuration and external MCP reports are separate concerns.
+- Normal chat is the default. RAG is a persisted per-chat switch; when enabled search all completed documents belonging to that user, selecting one eligible index per document. Never silently fall back to ungrounded generation or bypass reranker failures.
+- RAG answers require server-validated source references and verbatim quotes. Withhold structured drafts until validation. Empty eligible context skips primary answer generation (helper calls can still occur). Quote provenance is not semantic entailment.
+- Persist selected MCP servers per chat (up to eight). Reject ambiguous tool names and bound orchestration to 24 distinct calls. Every actual tool invocation requires explicit approval of its exact parameters; discovery requires no approval. Successful calls are cached across continuation; unknown write results must never be automatically repeated.
 
 ## Architecture
 
@@ -32,11 +33,15 @@
 - Explain each strategy's retention in UI. If its prepared context exceeds the configured character limit, return a clear error; this is not the model's exact token limit.
 - Stream responses as typed SSE events. Do not persist partial assistant output when a stream fails before completion.
 - Bound concurrency and shut executors down cleanly.
-- Query rewrite changes search text only; reranking and final generation use the original question. Keep rewrite tools disabled, validate completion, and account for its tokens/USD separately. Apply reranker threshold, final top-K and whole-chunk budget before numbering citations; scores are not answer probabilities.
+- Query rewrite resolves conversational references from recent history, summary and task memory. Final generation receives the original message; reranker receives the original message plus the resolved search context. Disable rewrite tools, validate completion, and account for its tokens/USD separately. Apply threshold, final top-K and whole-chunk budget before citation numbering; scores are not answer probabilities.
+- The complete transcript archive is independent of the provider context, including Summary. Save completed turns, archive entries and successful task updates in one transaction. Never save a partial assistant reply. Pending MCP proposals and known usage must survive refresh/restart.
+- Freeze retrieval/settings in a request snapshot before tool confirmation. Resume the same request ID; do not execute callbacks from the legacy chat API without approval context. Tools may execute only in Execution/Validation, never while paused, Planning or Done.
+- A PostgreSQL request ledger keeps known paid calls, including failed validation/retries. Mark usage incomplete when interrupted tool rounds do not return metrics; do not present known subtotal as the full provider bill.
 
 ## Memory layers
 
-- Memory layers are server-configured per agent. `Chat.messages`/summary is short-term; `Chat.workingMemory` is task-local; long-term memory uses a separate repository/directory and is isolated per agent, GLOBAL or PROJECT scope.
+- Memory layers and lifecycle are enabled for all bundled agents through shared server-owned `agent-defaults.yaml`, with per-agent overrides. `Chat.messages`/summary is short-term; task-local working memory is a separate JSONB column; long-term memory is a separate table isolated by owner, agent and GLOBAL/PROJECT scope.
+- Task memory includes goal, clarified requirements, constraints, decisions, unresolved questions and a bounded key/value glossary (`terms`). The user may inspect/edit each field. The model proposes data but cannot confirm stages.
 - One chat is one task. New chats must not inherit working memory; branches copy task state independently and reset inherited extraction usage. Never import another project's entries without an explicit matching project key.
 - LLM extraction only proposes task data and memory candidates; validate strict JSON and source quotes. Never let the model advance stages or persist long-term entries. Long-term writes require explicit UI confirmation/manual editing.
 - Confirm stages through deterministic transitions; requirement changes invalidate confirmation. Persist task updates with completed turns, and retain prior state on failed extraction or generation. Avoid duplicate facts extraction for layered agents.
@@ -44,12 +49,13 @@
 - Long-term entries use optimistic versions and atomic writes. Keep resolved proposal IDs so deleting an accepted entry does not resurrect the old candidate. Deleting a chat does not delete explicitly saved long-term memory; explain this in UI.
 - HTTP Basic authentication identifies the active profile. Store BCrypt password hashes, never plaintext passwords, and isolate chats and long-term memory by authenticated username.
 - User profiles contain display name, response style, response format and explicit constraints. Keep them separate from chat/task memory and add the active profile to every primary answer prompt; explicit current-request instructions override profile defaults.
-- Profile updates use optimistic versions and atomic file replacement. Preserve user/profile, chat and long-term directories in backups/deployments; concurrent multi-JVM file writers are unsupported.
+- Profile/settings/long-term updates use optimistic versions and database transactions. Back up PostgreSQL together with external configuration. Only a single backend instance is currently supported: generation locks and restart recovery are not a distributed lease protocol.
 
 ## Frontend
 
 - Keep components focused and accessible; all controls need labels and loading/error state must be announced.
-- Use responsive layouts and retain the user's prompt after submission.
+- Use the approved light visual concept: top navigation, dialogue sidebar, primary conversation, collapsible task inspector. Keep indexing/discovery in their own tabs; no separate legacy RAG answer experiment screen in the production UI.
+- Show the submitted prompt immediately and clear the composer immediately; retain/restore a retry draft on failure. Keep pending confirmation visible until resolved, including after reload.
 - Render streamed deltas incrementally and announce generation and summarization states without blocking the rest of the UI.
 - Render model Markdown without enabling raw HTML.
 - Show per-response model, duration, input/output/total tokens and USD cost, plus cumulative chat and context-summary metrics.
@@ -70,6 +76,6 @@
 - Return sanitized provider errors; never expose raw upstream response bodies.
 - Never log full user messages, generated answers, system prompts, summaries, API keys or raw provider bodies by default. Correlate calls with request/chat IDs and log only operational metadata.
 - Preserve deployment proxy settings and existing server-side user data during migrations.
-- Preserve external agent YAML files and the chat-data directory during deployment; external configuration replaces the bundled agent set.
+- Preserve external agent YAML files, environment/proxy configuration and PostgreSQL during deployment; never reset user data automatically. External agent configuration replaces the bundled agent set and receives shared defaults unless explicitly overridden.
 - Keep production SSE proxy buffering disabled and keep the Spring Boot listener on loopback behind Nginx.
 - Do not add CORS for the production same-origin deployment.

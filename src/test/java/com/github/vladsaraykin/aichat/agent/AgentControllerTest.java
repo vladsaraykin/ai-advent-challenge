@@ -17,6 +17,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AgentControllerTest {
     @TempDir Path directory;
+    @Test void legacyEndpointCannotBypassHarnessSettingsInProduction() throws Exception {
+        var service = org.mockito.Mockito.mock(ChatService.class);
+        var harness = org.mockito.Mockito.mock(com.github.vladsaraykin.aichat.harness.application.HarnessService.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new AgentController(service, harness))
+                .setControllerAdvice(new ChatExceptionHandler()).build();
+        mvc.perform(post("/api/agents/chef/chats/" + UUID.randomUUID() + "/messages")
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"messageId":"%s","content":"hello"}
+                        """.formatted(UUID.randomUUID()))).andExpect(status().isBadRequest());
+        org.mockito.Mockito.verifyNoInteractions(service, harness);
+    }
     @Test void forwardsMultipleMcpServersAndRejectsInvalidSelections() throws Exception {
         var selected = new java.util.concurrent.atomic.AtomicReference<java.util.List<String>>();
         ConversationModel model = new ConversationModel() {

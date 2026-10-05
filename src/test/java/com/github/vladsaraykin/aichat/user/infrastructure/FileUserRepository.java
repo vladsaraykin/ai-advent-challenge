@@ -6,10 +6,8 @@ import com.github.vladsaraykin.aichat.user.domain.*;
 import java.nio.file.*;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Repository;
 import tools.jackson.databind.json.JsonMapper;
 
-@Repository
 public class FileUserRepository implements UserRepository {
     private final Path directory;
     private final JsonMapper mapper = JsonMapper.builder().build();

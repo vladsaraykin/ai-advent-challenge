@@ -9,6 +9,7 @@ import reactor.core.publisher.Mono;
 
 public interface Agent {
     AgentDefinition definition();
+    default Agent withRequestContext(com.github.vladsaraykin.aichat.harness.domain.RequestContext context) { return this; }
     ChatMessage answer(List<ChatMessage> history, ChatMessage userMessage);
     default ChatMessage answer(ContextSummary summary, List<ChatMessage> history, ChatMessage userMessage) {
         return answer(history, userMessage);

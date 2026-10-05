@@ -4,7 +4,7 @@ import java.net.URI;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Bound only when RAG is enabled. Do not include credentials in diagnostics. */
+/** PostgreSQL is required for the harness even when chat retrieval is disabled. Never log credentials. */
 @ConfigurationProperties("app.rag")
 public record RagProperties(Database database, Ollama ollama) {
     public RagProperties {

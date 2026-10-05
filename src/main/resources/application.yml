@@ -63,8 +63,7 @@ app:
       input-per-million-usd: ${RAG_INPUT_PRICE:2.00}
       cached-input-per-million-usd: ${RAG_CACHED_INPUT_PRICE:0.10}
       output-per-million-usd: ${RAG_OUTPUT_PRICE:10.00}
-    enabled: ${RAG_ENABLED:false}
-    documents-directory: ${RAG_DOCUMENTS_DIRECTORY:data/rag-documents}
+    enabled: ${RAG_ENABLED:true}
     chunking:
       max-estimated-tokens: ${RAG_CHUNK_MAX_ESTIMATED_TOKENS:384}
       overlap-estimated-tokens: ${RAG_CHUNK_OVERLAP_ESTIMATED_TOKENS:64}
@@ -84,10 +83,6 @@ app:
     directory: ${REPORTS_DIRECTORY:../share/reports}
   agents:
     location: ${AGENT_CONFIG_LOCATION:classpath:agents/*.yaml}
-  chats:
-    directory: ${CHAT_DATA_DIR:data/agent-chats}
-  users:
-    directory: ${USER_DATA_DIR:${CHAT_DATA_DIR:data/agent-chats}/_users}
   openai:
     proxy:
       enabled: ${OPENAI_PROXY_ENABLED:false}

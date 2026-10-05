@@ -21,8 +21,13 @@ public class MemoryController {
                              @NotNull @Size(max=40) Map<String, String> requirements,
                              @NotNull @Size(max=40) Map<String, String> constraints,
                              @NotNull @Size(max=40) Map<String, String> decisions,
-                             @NotNull @Size(max=20) List<String> openQuestions) {
-        MemoryService.TaskData data() { return new MemoryService.TaskData(goal, requirements, constraints, decisions, openQuestions); }
+                             @NotNull @Size(max=20) List<String> openQuestions,
+                             @Size(max=40) Map<String,String> terms) {
+        public TaskFields(String goal,Map<String,String> requirements,Map<String,String> constraints,
+                          Map<String,String> decisions,List<String> openQuestions) {
+            this(goal,requirements,constraints,decisions,openQuestions,null);
+        }
+        MemoryService.TaskData data() { return new MemoryService.TaskData(goal, requirements, constraints, decisions, openQuestions,terms); }
     }
     public record Confirmation(@PositiveOrZero long version, @PositiveOrZero long taskVersion) { }
     public record EntryEdit(@PositiveOrZero long version, @NotNull WorkingMemory.Scope scope,

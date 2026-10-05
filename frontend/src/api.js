@@ -74,6 +74,7 @@ export const agentApi = {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }),
   mcpServers: () => rawRequest('/api/mcp/servers'),
+  knowledgeStats: () => rawRequest('/api/harness/knowledge/stats'),
   ragAnswerSettings: signal => rawRequest('/api/rag/answer-settings', { signal }),
   ragRetrievalSettings: signal => rawRequest('/api/rag/retrieval-settings', { signal }),
   ragQuestions: (id, signal) => rawRequest(`/api/rag/indexes/${encodeURIComponent(id)}/questions`, { signal }),
@@ -134,8 +135,18 @@ export const agentApi = {
   send: (agentId, chatId, message) => request(chatPath(agentId, chatId) + '/messages', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(message)
   }),
+  chatHistory: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/history'),
+  chatRequestUsage: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/usage'),
+  chatSettings: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/settings'),
+  saveChatSettings: (agentId, chatId, body) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/settings', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }),
+  pendingRequest: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/pending'),
+  requestDetails: (agentId, chatId, id) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + `/requests/${id}`),
+  approveTool: (agentId, chatId, id, body, handlers) => stream(chatPath(agentId, chatId) + `/requests/${id}/approval/stream`, body, handlers, '/api/harness/agents'),
+  cancelRequest: (agentId, chatId, id) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + `/requests/${id}`, { method: 'DELETE' }),
   sendStream: (agentId, chatId, message, handlers) =>
-    stream(chatPath(agentId, chatId) + '/messages/stream', message, handlers)
+    stream(chatPath(agentId, chatId) + '/messages/stream', message, handlers, '/api/harness/agents')
 }
 function jsonRequest(path, method, body) {
   return request(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })

@@ -27,6 +27,13 @@ public interface ConversationModel {
                                   List<ChatMessage> messages) {
         return Mono.fromSupplier(() -> reply(definition, messages));
     }
+    default Flux<StreamPart> stream(AgentDefinition definition,ContextSummary summary,List<ChatMessage> messages,
+                                   List<String> mcpServers,com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
+        return stream(definition,summary,messages,mcpServers);
+    }
+    default List<com.github.vladsaraykin.aichat.rag.domain.RagQuestion.Source> toolSources(
+            com.github.vladsaraykin.aichat.harness.domain.RequestContext context) { return List.of(); }
+    default void recordUsage(com.github.vladsaraykin.aichat.harness.domain.RequestContext context,ChatMessage.Metrics metrics) { }
     default Flux<StreamPart> extractFacts(AgentDefinition definition, List<ChatMessage> messages) {
         return stream(definition, messages);
     }

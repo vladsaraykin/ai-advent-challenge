@@ -6,10 +6,8 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Repository;
 import tools.jackson.databind.json.JsonMapper;
 
-@Repository
 public class FileChatRepository implements ChatRepository {
     private final Path root;
     private final JsonMapper mapper = JsonMapper.builder().build();

@@ -9,4 +9,6 @@ public interface DocumentStore {
     record Stored(UUID key, Path path, long size, String sha256) { }
     Stored save(InputStream input);
     void discard(Stored file);
+    /** Release parsing scratch files; durable storage is unaffected. */
+    default void release(Stored file) { }
 }

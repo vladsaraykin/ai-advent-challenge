@@ -18,12 +18,21 @@ public class McpToolService {
 
     private static final Logger log = LoggerFactory.getLogger(McpToolService.class);
     private final ObjectProvider<List<McpSyncClient>> clients;
+    private final McpApprovalService approvals;
 
     public McpToolService(ObjectProvider<List<McpSyncClient>> clients) {
+        this(clients,null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public McpToolService(ObjectProvider<List<McpSyncClient>> clients,McpApprovalService approvals) {
         this.clients = clients;
+        this.approvals = approvals;
     }
 
     public List<ToolCallback> callbacks(List<String> serverIds) {
+        return callbacks(serverIds,null);
+    }
+    public List<ToolCallback> callbacks(List<String> serverIds,com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
         if (serverIds == null || serverIds.isEmpty()) return List.of();
         if (serverIds.size() > 8 || serverIds.stream().anyMatch(id -> id == null || id.isBlank() || id.length() > 100)) {
             throw new ChatFailure(ChatFailure.Kind.INVALID, "Выберите от 1 до 8 MCP-серверов.");
@@ -36,11 +45,15 @@ public class McpToolService {
                     throw new ChatFailure(ChatFailure.Kind.INVALID,
                             "У выбранных MCP-серверов совпадают имена инструментов. Выберите другой набор серверов.");
                 }
-                result.add(callback);
+                result.add(approvals==null ? callback : approvals.guard(id,callback,context));
             }
         }
         var calls = new java.util.concurrent.atomic.AtomicInteger();
         return result.stream().map(delegate -> limited(delegate, calls)).toList();
+    }
+    public List<com.github.vladsaraykin.aichat.rag.domain.RagQuestion.Source> sources(
+            com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
+        return approvals==null ? List.of() : approvals.sources(context);
     }
 
     private static ToolCallback limited(ToolCallback delegate, java.util.concurrent.atomic.AtomicInteger calls) {
@@ -55,6 +68,10 @@ public class McpToolService {
                 return delegate.call(input, context);
             }
         };
+    }
+    public void usage(com.github.vladsaraykin.aichat.harness.domain.RequestContext context,
+                      com.github.vladsaraykin.aichat.agent.domain.ChatMessage.Metrics metrics) {
+        if(approvals!=null) approvals.usage(context,metrics);
     }
 
     private List<ToolCallback> serverCallbacks(String serverId) {

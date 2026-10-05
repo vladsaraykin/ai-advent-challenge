@@ -25,14 +25,14 @@ class AgentRegistryTest {
         assertThat(registry.get("assistant").definition().model()).isEqualTo("gpt-4.1-mini");
         assertThat(registry.get("assistant").definition().contextManagement().defaultStrategy().name())
                 .isEqualTo("SLIDING_WINDOW");
-        assertThat(registry.get("assistant").definition().memoryLayers().enabled()).isFalse();
+        assertThat(registry.get("assistant").definition().memoryLayers().enabled()).isTrue();
         assertThat(registry.get("assistant").definition().systemPrompt()).contains("MCP-инструменты");
-        assertThat(registry.get("chef").definition().memoryLayers().enabled()).isFalse();
-        assertThat(registry.get("chef").definition().invariants().enabled()).isFalse();
-        assertThat(registry.get("chef").definition().lifecycle().enabled()).isFalse();
+        assertThat(registry.get("chef").definition().memoryLayers().enabled()).isTrue();
+        assertThat(registry.get("chef").definition().invariants().enabled()).isTrue();
+        assertThat(registry.get("chef").definition().lifecycle().enabled()).isTrue();
         assertThatThrownBy(() -> new com.github.vladsaraykin.aichat.agent.domain.AgentDefinition.MemoryLayers(true, 3, 3000, "prompt"))
                 .hasMessageContaining("memory layer");
-        Files.writeString(directory.resolve("custom.yaml"), CONFIG + "memory-layers:\n  enabled: true\n");
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + "memory-layers:\n  enabled: true\n  recent-messages: 3\n");
         assertThatThrownBy(() -> new AgentRegistry((d, m) -> null, directory.toUri() + "*.yaml"))
                 .hasMessageContaining("memory layer");
     }

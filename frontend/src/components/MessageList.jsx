@@ -2,12 +2,13 @@ import { useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { formatTokens, formatUsd } from '../usage'
+import AnswerEvidence from './AnswerEvidence'
 
 export default function MessageList({ messages, agent, pending, pendingMessage = '', streamedAnswer = '', streamPhase = '' }) {
   const bottom = useRef(null)
   useEffect(() => { bottom.current?.scrollIntoView?.({ block: 'nearest' }) }, [messages, pending, streamedAnswer])
   return <div className="message-list" role="log" aria-label="Сообщения чата" aria-live="polite">
-    {!messages.length && !pending && <div className="welcome">
+    {!messages.length && !pending && !pendingMessage && <div className="welcome">
       <div className="welcome-mark" aria-hidden="true">{agent?.name?.slice(0, 1) || 'А'}</div>
       <h2>С чего начнём?</h2><p>{agent?.description}</p>
       <p className="welcome-hint">Расскажите о задаче. Можно продолжать разговор и возвращаться к нему позже.</p>
@@ -15,6 +16,7 @@ export default function MessageList({ messages, agent, pending, pendingMessage =
     {messages.map(message => <article key={message.id} className={`message message-${message.role.toLowerCase()}`}>
       <div className="message-author">{message.role === 'USER' ? 'Вы' : agent?.name}</div>
       <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{message.content}</ReactMarkdown></div>
+      <AnswerEvidence evidence={message.evidence} />
       {message.metrics && <footer>
         {message.metrics.model} · {(message.metrics.durationMs / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} сек. ·
         {' '}{formatTokens(message.metrics.totalTokens)} токенов
@@ -32,7 +34,7 @@ export default function MessageList({ messages, agent, pending, pendingMessage =
         {message.metrics.finishReason === 'length' && <span className="truncation-note">Ответ достиг лимита токенов. Попросите агента продолжить.</span>}
       </footer>}
     </article>)}
-    {pending && pendingMessage && <article className="message message-user"><div className="message-author">Вы</div>
+    {pendingMessage && <article className="message message-user"><div className="message-author">Вы</div>
       <p className="pending-text">{pendingMessage}</p></article>}
     {pending && <>
       {streamedAnswer
@@ -54,7 +56,8 @@ export default function MessageList({ messages, agent, pending, pendingMessage =
                   ? 'Проверяем ответ по инвариантам…' : streamPhase === 'checking_lifecycle'
                     ? 'Проверяем допустимость действия на текущем этапе…' : streamPhase === 'validating_lifecycle'
                       ? 'Проверяем ответ по этапу задачи…' : streamPhase === 'using_mcp'
-                        ? 'Модель выбирает и выполняет MCP-инструменты…' : `${agent?.name} подключается к модели…`}</div>}</>}
+                        ? 'Модель выбирает MCP-инструмент…' : streamPhase === 'retrieving'
+                          ? 'Ищем релевантные фрагменты в ваших документах…' : `${agent?.name} подключается к модели…`}</div>}</>}
     <div ref={bottom} />
   </div>
 }

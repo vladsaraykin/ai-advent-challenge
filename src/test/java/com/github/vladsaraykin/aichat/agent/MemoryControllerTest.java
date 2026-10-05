@@ -30,7 +30,7 @@ class MemoryControllerTest {
                 .andExpect(jsonPath("$[0].lifecycle").value(true))
                 .andExpect(jsonPath("$[0].systemPrompt").doesNotExist());
         mvc.perform(get("/api/agents/architect/memory")).andExpect(status().isOk()).andExpect(jsonPath("$.entries").isEmpty());
-        mvc.perform(get("/api/agents/chef/memory")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/agents/chef/memory")).andExpect(status().isOk()).andExpect(jsonPath("$.entries").isEmpty());
         UUID entry = UUID.randomUUID();
         String path = "/api/agents/architect/memory/" + entry;
         mvc.perform(put(path).contentType("application/json").content("""
@@ -76,6 +76,6 @@ class MemoryControllerTest {
                 .andExpect(jsonPath("$.workingMemory.currentStep").isNotEmpty());
         mvc.perform(put("/api/agents/chef/chats/" + chat.id() + "/task").contentType("application/json")
                 .content("{\"version\":0,\"projectKey\":\"\",\"task\":" + MemoryLayersTest.TASK + "}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
     }
 }
