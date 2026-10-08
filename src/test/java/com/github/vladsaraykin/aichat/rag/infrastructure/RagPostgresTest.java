@@ -149,7 +149,7 @@ class RagPostgresTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     pool.set(context.getBean("ragDataSource", HikariDataSource.class));
-                    assertThat(pool.get().getMaximumPoolSize()).isEqualTo(3);
+                    assertThat(pool.get().getMaximumPoolSize()).isEqualTo(50);
                     assertThat(context.getBean(RagProperties.class).ollama().dimensions()).isEqualTo(768);
                     assertThat(context.getBean("ragJdbcTemplate", JdbcTemplate.class)
                             .queryForObject("SELECT count(*) FROM rag.flyway_schema_history WHERE version='1' AND success", Integer.class))

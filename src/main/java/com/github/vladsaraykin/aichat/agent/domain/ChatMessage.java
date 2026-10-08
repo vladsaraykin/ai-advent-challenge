@@ -23,5 +23,17 @@ public record ChatMessage(UUID id, Role role, String content, Instant createdAt,
                           Integer currentMessageTokens, Integer historyTokens, Integer systemPromptTokens,
                           int promptTokens, Integer cachedPromptTokens, int completionTokens, int totalTokens,
                           BigDecimal inputCostUsd, BigDecimal outputCostUsd, BigDecimal totalCostUsd,
-                          String finishReason) { }
+                          String finishReason, String provider, Boolean usageAvailable) {
+        public Metrics(String model,long durationMs,Integer currentMessageTokens,Integer historyTokens,
+                Integer systemPromptTokens,int promptTokens,Integer cachedPromptTokens,int completionTokens,
+                int totalTokens,BigDecimal inputCostUsd,BigDecimal outputCostUsd,BigDecimal totalCostUsd,String finishReason) {
+            this(model,durationMs,currentMessageTokens,historyTokens,systemPromptTokens,promptTokens,cachedPromptTokens,
+                    completionTokens,totalTokens,inputCostUsd,outputCostUsd,totalCostUsd,finishReason,null,null);
+        }
+        public Metrics asLocal() {
+            return new Metrics(model,durationMs,null,null,null,promptTokens,cachedPromptTokens,completionTokens,totalTokens,
+                    BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,finishReason,"LOCAL_MLX",
+                    promptTokens>0 || completionTokens>0 || totalTokens>0);
+        }
+    }
 }

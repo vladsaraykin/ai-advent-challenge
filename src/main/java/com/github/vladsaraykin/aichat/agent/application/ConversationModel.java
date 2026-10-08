@@ -8,6 +8,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface ConversationModel {
+    default void validateSettings(com.github.vladsaraykin.aichat.harness.domain.ChatSettings settings) { }
+    default AgentDefinition configuredDefinition(AgentDefinition definition,
+            com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider provider) {
+        return definition;
+    }
     Reply reply(AgentDefinition definition, List<ChatMessage> messages);
     default Reply reply(AgentDefinition definition, ContextSummary summary, List<ChatMessage> messages) {
         return reply(definition, messages);

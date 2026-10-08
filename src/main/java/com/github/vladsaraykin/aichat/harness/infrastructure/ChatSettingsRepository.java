@@ -21,7 +21,7 @@ public class ChatSettingsRepository {
         if(settings.isPresent()) return settings.get();
         if(chat.parentChatId()!=null) {
             var inherited=get(owner,agent,chat.parentChatId());
-            return new ChatSettings(0,inherited.ragEnabled(),inherited.mcpServerIds(),inherited.retrieval());
+            return new ChatSettings(0,inherited.ragEnabled(),inherited.mcpServerIds(),inherited.retrieval(),inherited.provider());
         }
         return ChatSettings.defaults();
     }
@@ -29,7 +29,7 @@ public class ChatSettingsRepository {
         var chat=chats.get(owner,agent,id);
         if(chat.readOnly()) throw new ChatFailure(ChatFailure.Kind.INVALID,"Checkpoint доступен только для чтения");
         if(settings.version()!=get(owner,agent,id).version()) throw new ChatFailure(ChatFailure.Kind.BUSY,"Настройки уже изменились. Обновите чат.");
-        var next=new ChatSettings(settings.version()+1,settings.ragEnabled(),settings.mcpServerIds(),settings.retrieval());
+        var next=new ChatSettings(settings.version()+1,settings.ragEnabled(),settings.mcpServerIds(),settings.retrieval(),settings.provider());
         int count=jdbc.update("""
                 INSERT INTO rag.chat_settings(owner_username,chat_id,version,payload) VALUES(?,?,?,?::jsonb)
                 ON CONFLICT(owner_username,chat_id) DO UPDATE SET version=excluded.version,payload=excluded.payload

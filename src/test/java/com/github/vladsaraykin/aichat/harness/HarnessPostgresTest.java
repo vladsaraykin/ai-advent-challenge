@@ -77,7 +77,7 @@ class HarnessPostgresTest {
     @Test void settingsAndLongTermMemoryUseOptimisticVersionsAndSurviveRestart() {
         var chat=Chat.create("chef");chats.save(owner,chat);
         var settings=new ChatSettingsRepository(jdbc,chats);
-        var saved=settings.save(owner,"chef",chat.id(),new ChatSettings(0,true,List.of("files"),null));
+        var saved=settings.save(owner,"chef",chat.id(),new ChatSettings(0,true,List.of("files"),null,ChatSettings.LlmProvider.LOCAL_MLX));
         assertThat(new ChatSettingsRepository(jdbc,chats).get(owner,"chef",chat.id())).isEqualTo(saved);
         assertThatThrownBy(()->settings.save(owner,"chef",chat.id(),ChatSettings.defaults())).isInstanceOf(ChatFailure.class);
         var memory=new JdbcLongTermMemoryRepository(jdbc,tx);

@@ -48,8 +48,8 @@ public class HarnessRequestRepository {
         return jdbc.update("UPDATE rag.harness_requests SET status='RUNNING',updated_at=now() WHERE owner_username=? AND message_id=? AND status IN ('AWAITING_APPROVAL','FAILED','INTERRUPTED')",owner,id)==1;
     }
     public void usage(RequestContext context,ChatMessage.Metrics metrics) {
-        if(context!=null && metrics!=null) jdbc.update("UPDATE rag.harness_requests SET usage=usage || ?::jsonb WHERE owner_username=? AND message_id=?",
-                json.writeValueAsString(List.of(metrics)),context.owner(),context.messageId());
+        if(context!=null && metrics!=null) jdbc.update("UPDATE rag.harness_requests SET usage=usage || ?::jsonb,usage_complete=usage_complete AND ? WHERE owner_username=? AND message_id=?",
+                json.writeValueAsString(List.of(metrics)),!Boolean.FALSE.equals(metrics.usageAvailable()),context.owner(),context.messageId());
     }
     public void incomplete(RequestContext context) {
         jdbc.update("UPDATE rag.harness_requests SET usage_complete=false WHERE owner_username=? AND message_id=?",context.owner(),context.messageId());

@@ -30,7 +30,9 @@ public class RagContextService {
         this.requests=requests;
     }
     public RequestContext prepare(RequestContext request,Chat chat,AgentDefinition definition) {
+        model.validateSettings(request.settings());
         if(!request.settings().ragEnabled()) return request;
+        definition=model.configuredDefinition(definition,request.settings().provider());
         if(repository.getIfAvailable()==null || reranker.getIfAvailable()==null)
             throw new ChatFailure(ChatFailure.Kind.INVALID,"RAG недоступен. Проверьте серверную конфигурацию.");
         var json=JsonMapper.builder().build();

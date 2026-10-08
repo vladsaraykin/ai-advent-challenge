@@ -27,6 +27,8 @@ public class OpenAiConversationModel implements ConversationModel {
     private final TokenCounter tokenCounter;
     private final McpToolService mcpTools;
     private final ChatClient chatClient;
+    protected boolean localProvider() { return false; }
+    protected Prompt providerPrompt(Prompt request) { return request; }
     @org.springframework.beans.factory.annotation.Autowired
     public OpenAiConversationModel(ChatModel model, TokenCounter tokenCounter, McpToolService mcpTools) {
         this.model = model;
@@ -47,7 +49,7 @@ public class OpenAiConversationModel implements ConversationModel {
         try {
             log.info("llm_started agentId={} model={} contextMessages={} maxCompletionTokens={} outboundCalls=1",
                     definition.id(), definition.model(), messages.size() + 1, definition.maxCompletionTokens());
-            var response = model.call(prompt(definition, summary, messages, false));
+            var response = model.call(providerPrompt(prompt(definition, summary, messages, false)));
             if (response == null || response.getResult() == null) {
                 throw new ChatFailure(ChatFailure.Kind.PROVIDER, "Модель не вернула ответ");
             }
@@ -57,19 +59,19 @@ public class OpenAiConversationModel implements ConversationModel {
             int completionTokens = usage == null ? 0 : value(usage.getCompletionTokens());
             int cachedPromptTokens = usage == null || usage.getCacheReadInputTokens() == null
                     ? 0 : Math.toIntExact(usage.getCacheReadInputTokens());
-            int currentMessageTokens = messages.isEmpty() ? 0
+            int currentMessageTokens = localProvider() || messages.isEmpty() ? 0
                     : tokenCounter.count(definition.model(), messages.getLast().content());
-            int historyTokens = (summary == null ? 0 : tokenCounter.count(definition.model(), summary.content()))
+            int historyTokens = localProvider() ? 0 : (summary == null ? 0 : tokenCounter.count(definition.model(), summary.content()))
                     + messages.stream().limit(Math.max(0, messages.size() - 1L))
                             .mapToInt(message -> tokenCounter.count(definition.model(), message.content())).sum();
-            int systemPromptTokens = tokenCounter.count(definition.model(), definition.systemPrompt());
+            int systemPromptTokens = localProvider() ? 0 : tokenCounter.count(definition.model(), definition.systemPrompt());
             boolean hasUsage = promptTokens > 0 || completionTokens > 0
                     || (usage != null && value(usage.getTotalTokens()) > 0);
             var cost = hasUsage ? TokenCostCalculator.calculate(definition.pricing(), promptTokens,
                     cachedPromptTokens, completionTokens) : null;
             var metrics = new ChatMessage.Metrics(definition.model(),
                     (System.nanoTime() - started) / 1_000_000,
-                    currentMessageTokens, historyTokens, systemPromptTokens,
+                    localProvider() ? null : currentMessageTokens, localProvider() ? null : historyTokens, localProvider() ? null : systemPromptTokens,
                     promptTokens, cachedPromptTokens, completionTokens,
                     usage == null ? 0 : value(usage.getTotalTokens()),
                     cost == null ? null : cost.inputUsd(), cost == null ? null : cost.outputUsd(),
@@ -85,7 +87,9 @@ public class OpenAiConversationModel implements ConversationModel {
         catch (RuntimeException exception) {
             log.warn("llm_failed agentId={} model={} errorType={}", definition.id(),
                     definition.model(), exception.getClass().getSimpleName());
-            throw new ChatFailure(ChatFailure.Kind.PROVIDER, "Не удалось получить ответ от OpenAI. Попробуйте ещё раз.");
+            throw new ChatFailure(ChatFailure.Kind.PROVIDER, localProvider()
+                    ? "Не удалось получить ответ от локальной MLX. Проверьте сервер модели и повторите отправку."
+                    : "Не удалось получить ответ от OpenAI. Попробуйте ещё раз.");
         }
     }
 
@@ -159,7 +163,7 @@ public class OpenAiConversationModel implements ConversationModel {
                                         String systemPrompt, String operation, List<String> mcpServerIds) {
         return streamCall(definition,summary,messages,request,systemPrompt,operation,mcpServerIds,null);
     }
-    private Flux<StreamPart> streamCall(AgentDefinition definition,ContextSummary summary,List<ChatMessage> messages,
+    protected Flux<StreamPart> streamCall(AgentDefinition definition,ContextSummary summary,List<ChatMessage> messages,
             Prompt request,String systemPrompt,String operation,List<String> mcpServerIds,
             com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
         return Flux.defer(() -> {
@@ -177,8 +181,9 @@ public class OpenAiConversationModel implements ConversationModel {
             log.info("{}_started agentId={} model={} contextMessages={} mcpServers={} availableTools={}",
                     operation, definition.id(), definition.model(), request.getInstructions().size(),
                     mcpServerIds, callbacks.size());
-            Flux<ChatResponse> responses = callbacks.isEmpty() ? model.stream(request)
-                    : chatClient.prompt(request).toolCallbacks(callbacks).stream().chatResponse();
+            var providerRequest = providerPrompt(request);
+            Flux<ChatResponse> responses = callbacks.isEmpty() ? model.stream(providerRequest)
+                    : chatClient.prompt(providerRequest).toolCallbacks(callbacks).stream().chatResponse();
             Flux<StreamPart> deltas = responses.map(response -> {
                 if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
                     var usage = response.getMetadata().getUsage();
@@ -218,17 +223,17 @@ public class OpenAiConversationModel implements ConversationModel {
                                         List<ChatMessage> messages, String systemPrompt, long started,
                                         int promptTokens, int cachedPromptTokens, int completionTokens,
                                         int totalTokens, String finishReason) {
-        int currentMessageTokens = messages.isEmpty() ? 0
+        int currentMessageTokens = localProvider() || messages.isEmpty() ? 0
                 : tokenCounter.count(definition.model(), messages.getLast().content());
-        int historyTokens = (summary == null ? 0 : tokenCounter.count(definition.model(), summary.content()))
+        int historyTokens = localProvider() ? 0 : (summary == null ? 0 : tokenCounter.count(definition.model(), summary.content()))
                 + messages.stream().limit(Math.max(0, messages.size() - 1L))
                         .mapToInt(message -> tokenCounter.count(definition.model(), message.content())).sum();
-        int systemPromptTokens = tokenCounter.count(definition.model(), systemPrompt);
+        int systemPromptTokens = localProvider() ? 0 : tokenCounter.count(definition.model(), systemPrompt);
         boolean hasUsage = promptTokens > 0 || completionTokens > 0 || totalTokens > 0;
         var cost = hasUsage ? TokenCostCalculator.calculate(definition.pricing(), promptTokens,
                 cachedPromptTokens, completionTokens) : null;
         return new ChatMessage.Metrics(definition.model(), (System.nanoTime() - started) / 1_000_000,
-                currentMessageTokens, historyTokens, systemPromptTokens,
+                localProvider() ? null : currentMessageTokens, localProvider() ? null : historyTokens, localProvider() ? null : systemPromptTokens,
                 promptTokens, cachedPromptTokens, completionTokens, totalTokens,
                 cost == null ? null : cost.inputUsd(), cost == null ? null : cost.outputUsd(),
                 cost == null ? null : cost.totalUsd(),
@@ -242,7 +247,9 @@ public class OpenAiConversationModel implements ConversationModel {
         }
         log.warn("{}_failed agentId={} model={} errorType={}", operation, definition.id(),
                 definition.model(), exception.getClass().getSimpleName());
-        return new ChatFailure(ChatFailure.Kind.PROVIDER, "Не удалось получить ответ от OpenAI. Попробуйте ещё раз.");
+        return new ChatFailure(ChatFailure.Kind.PROVIDER, localProvider()
+                ? "Не удалось получить ответ от локальной MLX. Проверьте сервер модели и повторите отправку."
+                : "Не удалось получить ответ от OpenAI. Попробуйте ещё раз.");
     }
 
     private static List<org.springframework.ai.tool.ToolCallback> throwMissingMcpService() {

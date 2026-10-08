@@ -58,7 +58,9 @@ class RagContextServiceTest {
         var chat=Chat.create("assistant");
         var request=new RequestContext("alice","assistant",chat.id(),UUID.randomUUID(),"Привет",ChatSettings.defaults(),null,null,null);
         assertThat(service.prepare(request,chat,null)).isSameAs(request);
-        verifyNoInteractions(model,embeddings,usage);
+        verify(model).validateSettings(request.settings());
+        verifyNoMoreInteractions(model);
+        verifyNoInteractions(embeddings,usage);
     }
     @SuppressWarnings("unchecked") private static <T> ObjectProvider<T> provider(T value) {
         ObjectProvider<T> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(value);when(provider.getObject()).thenReturn(value);return provider;

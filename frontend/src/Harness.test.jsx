@@ -17,6 +17,51 @@ const apiFixture = () => ({
 })
 beforeEach(() => localStorage.clear())
 
+it('keeps chat properties in the inspector and usage below the composer', async () => {
+  const api = apiFixture()
+  api.chat.mockResolvedValue({ ...chat, messages: [{ id: 'answer', role: 'ASSISTANT', content: 'Ответ',
+    metrics: { promptTokens: 10, completionTokens: 5, totalTokens: 15, totalCostUsd: 0 } }] })
+  render(<App api={api} />)
+  await screen.findByText('Сохранённая полная история')
+  const inspector = screen.getByRole('complementary', { name: 'Параметры и память текущего чата' })
+  expect(within(inspector).getByRole('combobox', { name: 'Провайдер LLM' })).toBeInTheDocument()
+  expect(within(inspector).getByRole('checkbox', { name: 'RAG', exact: true })).toBeInTheDocument()
+  const conversation = screen.getByRole('region', { name: 'Диалог с агентом' })
+  expect(within(conversation).queryByRole('combobox', { name: 'Провайдер LLM' })).not.toBeInTheDocument()
+  const composer = screen.getByLabelText('Ваше сообщение').closest('form')
+  const usage = screen.getByRole('region', { name: 'Суммарный расход чата' })
+  expect(composer.compareDocumentPosition(usage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  await userEvent.click(screen.getByRole('button', { name: 'Память и настройки', exact: true }))
+  expect(screen.queryByRole('combobox', { name: 'Провайдер LLM' })).not.toBeInTheDocument()
+})
+
+it('persists Local MLX selection and restores the local model without requiring OpenAI', async () => {
+  const api = apiFixture()
+  api.llmProviders = vi.fn().mockResolvedValue([
+    { id: 'OPENAI', name: 'OpenAI', enabled: false },
+    { id: 'LOCAL_MLX', name: 'Local MLX', model: 'mlx-community/Qwen3.5-9B-4bit', enabled: true, toolsEnabled: false }
+  ])
+  render(<App api={api} />)
+  await screen.findByText('Сохранённая полная история')
+  expect(await screen.findByText('Выберите настроенного провайдера.')).toBeInTheDocument()
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Провайдер LLM' }), 'LOCAL_MLX')
+  await waitFor(() => expect(api.saveChatSettings).toHaveBeenCalledWith('assistant', 'chat-a', { ...settings, provider: 'LOCAL_MLX' }))
+  expect(await screen.findByText('mlx-community/Qwen3.5-9B-4bit')).toBeInTheDocument()
+  expect(screen.getByText(/Локальная генерация/)).toBeInTheDocument()
+})
+
+it('shows local API billing separately and never presents absent token usage as zero', async () => {
+  const api = apiFixture()
+  api.chatHistory.mockResolvedValue([{ id: 'local-answer', role: 'ASSISTANT', content: 'Локальный ответ', metrics: {
+    model: 'qwen', provider: 'LOCAL_MLX', usageAvailable: false, totalTokens: 0, promptTokens: 0,
+    completionTokens: 0, durationMs: 1500, totalCostUsd: 0
+  } }])
+  render(<App api={api} />)
+  expect(await screen.findByText(/Токены: сервер не вернул данные/)).toBeInTheDocument()
+  expect(screen.getByText('Стоимость: локально · без оплаты API')).toBeInTheDocument()
+  expect(screen.queryByText(/Вход API: 0/)).not.toBeInTheDocument()
+})
+
 it('loads full stored history and persists RAG preference before sending the next request', async () => {
   const api = apiFixture()
   api.sendStream.mockImplementation(async (_agent, _chat, request, handlers) => {

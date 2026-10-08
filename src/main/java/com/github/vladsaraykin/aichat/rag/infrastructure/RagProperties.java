@@ -21,8 +21,8 @@ public record RagProperties(Database database, Ollama ollama) {
                     || username == null || username.isBlank() || password == null || password.isBlank()) {
                 throw new IllegalArgumentException("RAG requires a PostgreSQL URL without credentials/query parameters, username and password");
             }
-            if (maximumPoolSize < 1 || maximumPoolSize > 8) {
-                throw new IllegalArgumentException("RAG database pool size must be between 1 and 8");
+            if (maximumPoolSize < 1 || maximumPoolSize > 50) {
+                throw new IllegalArgumentException("RAG database pool size must be between 1 and 50");
             }
             requireTimeout(connectionTimeout, "database connection", Duration.ofMillis(250));
         }

@@ -4,7 +4,16 @@ public record AgentDefinition(String id, String name, String description, String
                               String systemPrompt, int maxCompletionTokens,
                               String reasoningEffort, int timeoutSeconds, int maxHistoryChars,
                               TokenPricing pricing, ContextCompression compression, ContextManagement contextManagement,
-                              MemoryLayers memoryLayers, InvariantSettings invariants, LifecycleSettings lifecycle) {
+                              MemoryLayers memoryLayers, InvariantSettings invariants, LifecycleSettings lifecycle,
+                              com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider provider) {
+    public AgentDefinition(String id,String name,String description,String model,String systemPrompt,
+            int maxCompletionTokens,String reasoningEffort,int timeoutSeconds,int maxHistoryChars,
+            TokenPricing pricing,ContextCompression compression,ContextManagement contextManagement,
+            MemoryLayers memoryLayers,InvariantSettings invariants,LifecycleSettings lifecycle) {
+        this(id,name,description,model,systemPrompt,maxCompletionTokens,reasoningEffort,timeoutSeconds,maxHistoryChars,
+                pricing,compression,contextManagement,memoryLayers,invariants,lifecycle,
+                com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider.OPENAI);
+    }
     public AgentDefinition(String id, String name, String description, String model,
                            String systemPrompt, int maxCompletionTokens, String reasoningEffort,
                            int timeoutSeconds, int maxHistoryChars, TokenPricing pricing,
@@ -43,6 +52,7 @@ public record AgentDefinition(String id, String name, String description, String
     }
 
     public AgentDefinition {
+        if(provider==null) provider=com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider.OPENAI;
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) {
             throw new IllegalArgumentException("Invalid agent id");
         }
@@ -69,7 +79,7 @@ public record AgentDefinition(String id, String name, String description, String
 
     public AgentDefinition withPrompt(String prompt, int limit) {
         return new AgentDefinition(id, name, description, model, prompt, limit, reasoningEffort,
-                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement, memoryLayers, invariants, lifecycle);
+                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement, memoryLayers, invariants, lifecycle, provider);
     }
 
     public record LifecycleSettings(boolean enabled, int maxCompletionTokens, String guardPrompt) {

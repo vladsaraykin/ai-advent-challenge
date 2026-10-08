@@ -27,16 +27,6 @@ describe('SSE chat API', () => {
     await agentApi.ragChunks('run', 10)
     expect(fetch.mock.calls[2][0]).toBe('/api/rag/indexes/run/chunks?limit=10&offset=10')
   })
-  it('uses authentication and encoded filenames for downloads and reports server errors', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: 'Отчёт не найден' }), {
-      status: 404, headers: { 'Content-Type': 'application/json' }
-    }))
-    vi.stubGlobal('fetch', fetch)
-    agentApi.setCredentials('alice', 'secret-123')
-    await expect(agentApi.downloadReport('отчёт & 1.xlsx')).rejects.toThrow('Отчёт не найден')
-    expect(fetch.mock.calls[0][0]).toBe('/api/reports/download?' + new URLSearchParams({ name: 'отчёт & 1.xlsx' }))
-    expect(fetch.mock.calls[0][1].headers.Authorization).toBe(`Basic ${btoa('alice:secret-123')}`)
-  })
   it('sends HTTP Basic credentials to protected endpoints', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ username: 'alice' }), {
       status: 200, headers: { 'Content-Type': 'application/json' }

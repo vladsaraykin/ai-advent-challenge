@@ -31,7 +31,9 @@ class RagConfigurationTest {
         assertThatThrownBy(() -> database("jdbc:mysql://localhost/db", 3)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> database("jdbc:postgresql://localhost/db?password=secret", 3))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> database("jdbc:postgresql://localhost/db", 9)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(database("jdbc:postgresql://localhost/db", 50).maximumPoolSize()).isEqualTo(50);
+        assertThatThrownBy(() -> database("jdbc:postgresql://localhost/db", 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> database("jdbc:postgresql://localhost/db", 51)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new RagProperties.Database("jdbc:postgresql://localhost/db", "user", "", 3,
                 Duration.ofSeconds(5))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ollama("file:///tmp/model", 768)).isInstanceOf(IllegalArgumentException.class);

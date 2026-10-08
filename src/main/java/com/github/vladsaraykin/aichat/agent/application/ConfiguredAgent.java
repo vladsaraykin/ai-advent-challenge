@@ -26,7 +26,9 @@ public final class ConfiguredAgent implements Agent {
         this.requestContext = context;
     }
     @Override public Agent withRequestContext(com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
-        return new ConfiguredAgent(definition,model,context);
+        if(context!=null) model.validateSettings(context.settings());
+        return new ConfiguredAgent(context == null ? definition
+                : model.configuredDefinition(definition, context.settings().provider()),model,context);
     }
     @Override public AgentDefinition definition() { return definition; }
 
@@ -362,7 +364,9 @@ public final class ConfiguredAgent implements Agent {
                                     && entries.stream().noneMatch(e -> e.scope() == p.scope() && e.key().equals(p.key()) && e.value().equals(p.value()))) proposals.add(proposal);
                         }
                         validation = "task_bounds";
-                        return MemoryService.update(chat.workingMemory(), extracted.task(), chat.workingMemory().projectKey(), proposals, reply.metrics());
+                        var taskData=definition.provider()==com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider.LOCAL_MLX
+                                ? MemoryService.retainKnownQuestions(chat.workingMemory(),extracted.task()) : extracted.task();
+                        return MemoryService.update(chat.workingMemory(), taskData, chat.workingMemory().projectKey(), proposals, reply.metrics());
                     } catch (RuntimeException e) {
                         log.warn("memory_validation_failed agentId={} chatId={} requestId={} reason={} responseChars={} finishReason={} completionTokens={}",
                                 definition.id(), chat.id(), user.id(), validation, reply.text() == null ? 0 : reply.text().length(),

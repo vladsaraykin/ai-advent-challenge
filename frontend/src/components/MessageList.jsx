@@ -19,16 +19,16 @@ export default function MessageList({ messages, agent, pending, pendingMessage =
       <AnswerEvidence evidence={message.evidence} />
       {message.metrics && <footer>
         {message.metrics.model} · {(message.metrics.durationMs / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} сек. ·
-        {' '}{formatTokens(message.metrics.totalTokens)} токенов
+        {' '}{message.metrics.usageAvailable === false ? 'Токены: сервер не вернул данные' : `${formatTokens(message.metrics.totalTokens)} токенов`}
         {message.metrics.currentMessageTokens != null && <span>
           Текущий запрос: {formatTokens(message.metrics.currentMessageTokens)} ·
           {' '}История: {formatTokens(message.metrics.historyTokens)} ·
           {' '}Системный промпт: {formatTokens(message.metrics.systemPromptTokens)}
         </span>}
-        <span>Вход API: {formatTokens(message.metrics.promptTokens)}
+        {message.metrics.usageAvailable !== false && <span>Вход API: {formatTokens(message.metrics.promptTokens)}
           {message.metrics.cachedPromptTokens > 0 && <> · из кэша: {formatTokens(message.metrics.cachedPromptTokens)}</>}
-          {' '}· Ответ: {formatTokens(message.metrics.completionTokens)}</span>
-        <span className="message-cost">Стоимость: {message.metrics.totalCostUsd != null
+          {' '}· Ответ: {formatTokens(message.metrics.completionTokens)}</span>}
+        <span className="message-cost">Стоимость: {message.metrics.provider === 'LOCAL_MLX' ? 'локально · без оплаты API' : message.metrics.totalCostUsd != null
           ? `${formatUsd(message.metrics.totalCostUsd)} (вход ${formatUsd(message.metrics.inputCostUsd)} · ответ ${formatUsd(message.metrics.outputCostUsd)})`
           : 'нет данных — сообщение создано до включения расчёта'}</span>
         {message.metrics.finishReason === 'length' && <span className="truncation-note">Ответ достиг лимита токенов. Попросите агента продолжить.</span>}

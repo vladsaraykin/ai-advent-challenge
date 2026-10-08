@@ -5,6 +5,16 @@ import java.util.*;
 
 /** Deterministic task rules. The model cannot confirm a stage or write long-term memory. */
 public final class MemoryService {
+    /** A memory update may resolve existing questions; only answer extraction introduces new ones. */
+    public static TaskData retainKnownQuestions(WorkingMemory previous,TaskData proposed) {
+        var known=new ArrayList<String>();
+        for(String question:proposed.openQuestions()) {
+            String normalized=question.strip().replaceAll("(?U)\\s+"," ");
+            previous.openQuestions().stream().filter(old->old.strip().replaceAll("(?U)\\s+"," ").equalsIgnoreCase(normalized))
+                    .findFirst().ifPresent(old->{ if(!known.contains(old)) known.add(old); });
+        }
+        return new TaskData(proposed.goal(),proposed.requirements(),proposed.constraints(),proposed.decisions(),known,proposed.terms());
+    }
     private static final TaskStateMachine STATE_MACHINE = new TaskStateMachine();
     private static final java.util.regex.Pattern TEMPORARY_GOAL_SUFFIX = java.util.regex.Pattern.compile(
             "(?iu)\\s*(?:,|;)?\\s*(?:и\\s+)?(?:без\\s+начала\\s+(?:реализации|разработки)|"

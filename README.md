@@ -1,13 +1,16 @@
 # AI Advent Challenge — агент с RAG, памятью и MCP
 
-День 25: единый web-harness на React + Java 21 / Spring Boot.
+День 27: единый web-harness на React + Java 21 / Spring Boot с локальной MLX-моделью
+и сохранёнными возможностями RAG, памяти и MCP.
 Качественную оценку ответов пользователь выполняет самостоятельно.
 
 ## Интерфейс
 
-- **Чат**: выбор агента, история и ветки, RAG-переключатель, SSE-статусы, ответы и источники.
+- **Чат**: выбор агента и провайдера OpenAI / Local MLX, история и ветки, RAG-переключатель, SSE-статусы, ответы и источники.
   Enter отправляет; Shift+Enter добавляет строку. Запрос показывается сразу,
   composer очищается сразу, при ошибке восстанавливается черновик.
+  RAG и провайдер LLM находятся в панели «Память и настройки» после создания чата;
+  суммарный расход отображается под полем ввода. Блок скачивания общих отчётов удалён из UI.
 - **RAG**: PDF / DOC / DOCX до 20 МиБ, извлечённый текст, fixed-size / structural chunking,
   индексация и статистика PostgreSQL. OCR для сканов не предусмотрен.
 - **MCP**: подключения, статусы, инструменты, описания и входные схемы.
@@ -113,6 +116,14 @@ Embedding usage и время поиска сохраняются в retrieval t
 
 ## Разработка и запуск
 
+День 27: в чате доступен выбор **OpenAI / Local MLX**. Провайдер сохраняется в PostgreSQL
+и фиксируется для каждого запроса. Local MLX использует Qwen для ответа, памяти,
+сжатия и RAG rewrite, работает без OPENAI_API_KEY и не переключается в облако при ошибке.
+[Запуск MLX и локального режима](deploy/llm/readme.md).
+MLX: `127.0.0.1:18081`, backend: `localhost:8080`, UI: `localhost:5173`.
+Стоимость локальных вызовов — без платы API, токены берутся из MLX usage.
+MCP для MLX отключён по умолчанию; включается через LOCAL_LLM_TOOLS_ENABLED после проверки поддержки.
+
 Нужны Java 21+, Maven, Node.js 22+, PostgreSQL с pgvector,
 Ollama (embeddinggemma, 768 измерений), reranker из deploy/reranker.
 [Windows/WSL2 GPU-инструкция](deploy/rag-gpu/README.md).
@@ -121,6 +132,7 @@ Ollama (embeddinggemma, 768 измерений), reranker из deploy/reranker.
 export OPENAI_API_KEY="ваш-ключ"
 export RAG_DATABASE_URL="jdbc:postgresql://192.168.1.34:5432/ai_advent_rag"
 export RAG_DATABASE_USERNAME="ai_advent_rag"
+export RAG_DATABASE_POOL_SIZE=50
 read -s RAG_DATABASE_PASSWORD
 export RAG_DATABASE_PASSWORD
 export RAG_ENABLED=true

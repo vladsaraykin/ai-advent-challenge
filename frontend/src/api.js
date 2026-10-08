@@ -74,6 +74,7 @@ export const agentApi = {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }),
   mcpServers: () => rawRequest('/api/mcp/servers'),
+  llmProviders: () => rawRequest('/api/llm/providers'),
   knowledgeStats: () => rawRequest('/api/harness/knowledge/stats'),
   ragAnswerSettings: signal => rawRequest('/api/rag/answer-settings', { signal }),
   ragRetrievalSettings: signal => rawRequest('/api/rag/retrieval-settings', { signal }),
@@ -92,21 +93,6 @@ export const agentApi = {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy }), signal
   }),
   ragChunks: (id, offset = 0, signal) => rawRequest(`/api/rag/indexes/${encodeURIComponent(id)}/chunks?limit=10&offset=${offset}`, { signal }),
-  reports: () => rawRequest('/api/reports'),
-  downloadReport: async name => {
-    const response = await fetch('/api/reports/download?' + new URLSearchParams({ name }), {
-      headers: authHeaders(), cache: 'no-store'
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.message || 'Не удалось скачать отчёт.')
-    }
-    const url = URL.createObjectURL(await response.blob())
-    const link = document.createElement('a')
-    link.href = url; link.download = name
-    document.body.appendChild(link); link.click(); link.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-  },
   memory: agentId => request(`/${encodeURIComponent(agentId)}/memory`),
   putMemory: (agentId, id, body) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'PUT', body),
   deleteMemory: (agentId, id, version) => jsonRequest(`/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(id)}`, 'DELETE', { version }),

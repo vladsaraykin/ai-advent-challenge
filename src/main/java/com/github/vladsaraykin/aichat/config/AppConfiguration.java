@@ -14,6 +14,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 @EnableConfigurationProperties(OpenAiProxyProperties.class)
 public class AppConfiguration implements WebMvcConfigurer {
+    private final long streamTimeoutMs;
+    public AppConfiguration(@org.springframework.beans.factory.annotation.Value("${app.streaming.timeout-seconds:900}") int timeoutSeconds) {
+        if(timeoutSeconds<30 || timeoutSeconds>3600) throw new IllegalArgumentException("Invalid SSE timeout");
+        streamTimeoutMs=timeoutSeconds*1000L;
+    }
 
     @Bean(destroyMethod = "shutdown")
     ThreadPoolTaskExecutor mvcStreamingExecutor() {
@@ -30,7 +35,7 @@ public class AppConfiguration implements WebMvcConfigurer {
     @Override
     public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
         configurer.setTaskExecutor(mvcStreamingExecutor());
-        configurer.setDefaultTimeout(180_000);
+        configurer.setDefaultTimeout(streamTimeoutMs);
     }
 
     @Bean

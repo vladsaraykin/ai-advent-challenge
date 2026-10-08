@@ -10,11 +10,12 @@ const callWord = value => {
 
 export default function ChatUsageSummary({ messages, summary, memory, workingMemory, invariants, lifecycle }) {
   const usage = summarizeUsage(messages, summary, memory, workingMemory, invariants, lifecycle)
+  const incompleteTokens = messages.some(message => message.metrics?.usageAvailable === false)
   if (!usage.calls) return null
   return <section className="usage-summary" aria-label="Суммарный расход чата">
     <strong>Расход чата</strong>
     <span>{usage.calls} {callWord(usage.calls)} · вход {formatTokens(usage.promptTokens)} ·
-      {' '}выход {formatTokens(usage.completionTokens)} · всего {formatTokens(usage.totalTokens)} токенов</span>
+      {' '}выход {formatTokens(usage.completionTokens)} · всего {formatTokens(usage.totalTokens)} токенов{incompleteTokens && ' · данные о токенах неполные'}</span>
     <span>{usage.pricedCalls
       ? `${formatUsd(usage.totalCostUsd)}${usage.pricedCalls < usage.calls ? ` · посчитано ${usage.pricedCalls} из ${usage.calls}` : ''}`
       : 'Стоимость старых вызовов недоступна'}</span>
