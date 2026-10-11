@@ -92,7 +92,7 @@ UI: `cd frontend`, `npm ci`, `npm run dev -- --host 127.0.0.1`.
 Настройки в `app.llm.local` (`application.yml`): `LOCAL_LLM_ENABLED`, `LOCAL_LLM_BASE_URL`,
 `LOCAL_LLM_MODEL`, `LOCAL_LLM_MAX_TOKENS`, `LOCAL_LLM_TIMEOUT_SECONDS`,
 `LOCAL_LLM_CONCURRENCY`, `LOCAL_LLM_TEMPERATURE`, `LOCAL_LLM_THINKING`, `LOCAL_LLM_TOOLS_ENABLED`.
-Температура обычного ответа по умолчанию 0.3, для JSON-вызовов — 0; thinking отключён, чтобы вспомогательные JSON-вызовы
+Температура обычного ответа по умолчанию 0.4, лимит генерации — 2048 токенов, для JSON-вызовов температура принудительно 0; thinking отключён, чтобы вспомогательные JSON-вызовы
 не тратили лимит ответа на рассуждения. MLX не обеспечивает JSON mode: результат
 проверяют существующие серверные валидаторы; неверный JSON не сохраняет ход.
 Обновление локальной памяти может сохранять/разрешать уже известные вопросы.
@@ -106,6 +106,42 @@ MCP для MLX по умолчанию отключён. Для проверки
 `CHAT_STREAM_TIMEOUT_SECONDS=900` задаёт общий SSE-таймаут (30–3600 секунд);
 `LOCAL_LLM_TIMEOUT_SECONDS=180` — таймаут одного вызова MLX. При использовании Nginx
 его proxy_read_timeout должен позволять ждать вспомогательные генерации; SSE buffering остаётся выключенным.
+
+## Настройка Ollama для агента «Повар-помощник»
+
+Для Ollama-совместимого `/v1` размер контекста задаётся параметром `num_ctx` в модели,
+а не отдельным полем каждого OpenAI-совместимого запроса. Создайте вариант модели с контекстом
+8192 токена из уже установленной Q4-модели (веса и квантование не меняются):
+
+```bash
+ollama create qwen2.5:7b-instruct-q4_K_M-chef-8k -f deploy/llm/Modelfile.ollama-chef
+ollama show qwen2.5:7b-instruct-q4_K_M-chef-8k
+```
+
+Затем запустите backend с параметрами Ollama:
+
+```bash
+export LOCAL_LLM_BASE_URL=http://192.168.1.34:11434/v1
+export LOCAL_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M-chef-8k
+export LOCAL_LLM_TEMPERATURE=0.4
+export LOCAL_LLM_MAX_TOKENS=2048
+```
+
+Если Ollama работает на Windows, выполните создание варианта модели в PowerShell
+на Windows-компьютере, где установлен Ollama (из клона этого репозитория):
+
+```powershell
+ollama create qwen2.5:7b-instruct-q4_K_M-chef-8k -f .\deploy\llm\Modelfile.ollama-chef
+ollama show qwen2.5:7b-instruct-q4_K_M-chef-8k
+```
+
+А переменные `LOCAL_LLM_*` задайте в shell, из которого запускается Spring Boot.
+
+Температура 0.4 оставляет небольшую вариативность для подбора блюд, а лимит 2048
+подходит для развернутого рецепта, но ограничивает длинные ответы. Системный промпт
+`agents/chef.yaml` задаёт формат рецептов, ограничения по пищевой безопасности и работу
+с продуктами пользователя. Сравнивать результаты следует на одинаковых запросах и настройках
+чата; приложение не переключает модель или режим генерации незаметно.
 
 ## Самопроверка
 
