@@ -74,6 +74,7 @@ export const agentApi = {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }),
   mcpServers: () => rawRequest('/api/mcp/servers'),
+  health: () => rawRequest('/api/health/dependencies'),
   llmProviders: () => rawRequest('/api/llm/providers'),
   knowledgeStats: () => rawRequest('/api/harness/knowledge/stats'),
   ragAnswerSettings: signal => rawRequest('/api/rag/answer-settings', { signal }),

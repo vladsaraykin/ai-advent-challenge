@@ -13,6 +13,15 @@ class MemoryParsingTest {
         assertThatThrownBy(() -> ConfiguredAgent.sourceQuote(source, "предпочитаю подробные ответы"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test void unsupportedOptionalMemoryEvidenceIsDiscardedWithoutFailingTurn() {
+        String currentMessage = "Расскажи, как устроен RAG.";
+        assertThat(ConfiguredAgent.sourceQuoteIfPresent(currentMessage, "как устроен RAG"))
+                .contains("как устроен RAG");
+        assertThat(ConfiguredAgent.sourceQuoteIfPresent(currentMessage, "предпочитаю краткие ответы"))
+                .isEmpty();
+    }
+
     @Test void unwrapsOnlyCompleteJsonFenceAndDoesNotRepairBrokenContent() {
         assertThat(ConfiguredAgent.memoryJson("```json\n{\"task\":{}}\n```" )).isEqualTo("{\"task\":{}}");
         assertThat(ConfiguredAgent.memoryJson("```\n{}\n```" )).isEqualTo("{}");

@@ -284,7 +284,17 @@ public class ChatService {
                     .onErrorResume(ChatFailure.class, failure -> summaryFallback(chat, failure));
             if (layered) preparation = preparation.flatMap(prepared -> agent.prepareMemory(prepared.chat().withWorkingMemory(
                             prepared.chat().workingMemory().withoutResolved(durable.resolvedProposals())), user, entries)
-                    .map(memory -> new Prepared(prepared.chat().withWorkingMemory(memory), prepared.warning(), prepared.memoryFailed())));
+                    .map(memory -> new Prepared(prepared.chat().withWorkingMemory(memory), prepared.warning(), prepared.memoryFailed()))
+                    .onErrorResume(ChatFailure.class, failure -> {
+                        log.warn("agent_memory_update_skipped agentId={} chatId={} requestId={} kind={}",
+                                agentId, chatId, messageId, failure.kind());
+                        String warning = "Ответ будет подготовлен с прежней памятью задачи. "
+                                + "Память не обновлена; проверьте или измените её вручную в инспекторе задачи.";
+                        if (prepared.warning() != null && !prepared.warning().isBlank()) {
+                            warning = prepared.warning() + " " + warning;
+                        }
+                        return Mono.just(new Prepared(prepared.chat(), warning, true));
+                    }));
             final Mono<Prepared> finalPreparation = preparation;
             boolean lifecycleActive = agent.definition().lifecycle().enabled() && layered;
             boolean invariantActive = agent.definition().invariants().enabled() && !chat.invariants().entries().isEmpty();

@@ -235,29 +235,44 @@ class MemoryLayersTest {
     @Test void failedExtractionOrAnswerDoesNotCommitAndRetryDoesNotDuplicate() throws Exception {
         var output = new AtomicReference<>(EXTRACT);
         var failAnswer = new AtomicBoolean(false);
+        var answerCalls = new AtomicInteger();
         var service = service((d, messages) -> {
             if (extraction(d)) return reply(output.get());
             if (failAnswer.get()) throw new ChatFailure(ChatFailure.Kind.PROVIDER, "provider failed");
+            answerCalls.incrementAndGet();
             return reply("ok");
         });
         var chat = service.create("architect");
         UUID messageId = UUID.randomUUID();
-        for (String invalid : List.of("not JSON", "{}", EXTRACT.replace("\"email\"", "42"),
-                "{\"task\":" + TASK + ",\"proposals\":[" + PROPOSAL + "]}")) {
-            output.set(invalid);
-            assertThatThrownBy(() -> service.send("architect", chat.id(), messageId, "Не содержит цитату")).hasMessageContaining("JSON");
-            assertThat(service.get("architect", chat.id())).isEqualTo(chat);
-        }
-        output.set(EXTRACT); failAnswer.set(true);
-        assertThatThrownBy(() -> service.send("architect", chat.id(), messageId, "Не содержит цитату")).hasMessageContaining("provider failed");
-        assertThat(service.get("architect", chat.id())).isEqualTo(chat);
-        failAnswer.set(false);
+        output.set("not JSON");
         var events = service.stream("architect", chat.id(), messageId, "Не содержит цитату").collectList().block();
-        assertThat(events).extracting(ChatService.StreamEvent::type).contains(ChatService.StreamEvent.Type.UPDATING_MEMORY);
-        var completed = service.get("architect", chat.id());
+        assertThat(events).extracting(ChatService.StreamEvent::type).contains(ChatService.StreamEvent.Type.COMPLETED);
+        assertThat(events.getLast().warning()).contains("прежней памятью", "не обновлена");
+        var completed = events.getLast().chat();
         assertThat(completed.messages()).hasSize(2);
-        assertThat(completed.workingMemory().usage().calls()).isEqualTo(2);
-        assertThat(service.send("architect", chat.id(), messageId, "Не содержит цитату")).isEqualTo(completed);
+        assertThat(completed.workingMemory()).isEqualTo(chat.workingMemory());
+        assertThat(service.stream("architect", chat.id(), messageId, "Не содержит цитату").collectList().block()
+                .getLast().chat()).isEqualTo(completed);
+        assertThat(answerCalls).hasValue(1);
+
+        var answerFailureChat = service.create("architect");
+        output.set(EXTRACT); failAnswer.set(true);
+        UUID retryId = UUID.randomUUID();
+        assertThatThrownBy(() -> service.send("architect", answerFailureChat.id(), retryId, "Не содержит цитату"))
+                .hasMessageContaining("provider failed");
+        assertThat(service.get("architect", answerFailureChat.id())).isEqualTo(answerFailureChat);
+        failAnswer.set(false);
+        var retryEvents = service.stream("architect", answerFailureChat.id(), retryId, "Не содержит цитату").collectList().block();
+        assertThat(retryEvents).extracting(ChatService.StreamEvent::type).contains(ChatService.StreamEvent.Type.UPDATING_MEMORY);
+        var retried = service.get("architect", answerFailureChat.id());
+        assertThat(retried.messages()).hasSize(2);
+        assertThat(retried.workingMemory().usage().calls()).isEqualTo(2);
+        assertThat(service.send("architect", answerFailureChat.id(), retryId, "Не содержит цитату")).isEqualTo(retried);
+
+        output.set("{\"task\":" + TASK + ",\"proposals\":[" + PROPOSAL + "]}");
+        var unsupportedCandidate = service.send("architect", answerFailureChat.id(), UUID.randomUUID(), "Расскажи про RAG");
+        assertThat(unsupportedCandidate.messages()).hasSize(4);
+        assertThat(unsupportedCandidate.workingMemory().proposals()).isEmpty();
     }
     @Test void stateTransitionsRequireExplicitCommandsAndBranchesKeepIndependentTaskState() throws Exception {
         var service = service((d, messages) -> reply(extraction(d) ? EXTRACT : "ok"));
@@ -295,9 +310,8 @@ class MemoryLayersTest {
         assertThatThrownBy(() -> service.advanceTask("architect", a.id(), changed.workingMemory().version())).hasMessageContaining("ожидается");
         inFlight.collectList().block();
     }
-    @Test void incompleteExtractionAndCancelledAnswerPreserveTaskAndReleaseChatLock() throws Exception {
+    @Test void incompleteExtractionPreservesOldMemoryAndDoesNotBlockAnswer() throws Exception {
         var incomplete = new AtomicBoolean(true);
-        var cancelAnswer = new AtomicBoolean(false);
         ConversationModel model = new ConversationModel() {
             public Reply reply(AgentDefinition d, List<ChatMessage> messages) { return MemoryLayersTest.reply(EXTRACT); }
             public reactor.core.publisher.Flux<StreamPart> extractMemory(AgentDefinition d, List<ChatMessage> messages) {
@@ -311,21 +325,20 @@ class MemoryLayersTest {
                 return reactor.core.publisher.Flux.just(StreamPart.completed(MemoryLayersTest.reply(EXTRACT)));
             }
             public reactor.core.publisher.Flux<StreamPart> stream(AgentDefinition d, ContextSummary summary, List<ChatMessage> messages) {
-                return cancelAnswer.get() ? reactor.core.publisher.Flux.concat(reactor.core.publisher.Flux.just(StreamPart.delta("частичный")),
-                        reactor.core.publisher.Flux.never()) : reactor.core.publisher.Flux.just(StreamPart.completed(MemoryLayersTest.reply("ok")));
+                return reactor.core.publisher.Flux.just(StreamPart.completed(MemoryLayersTest.reply("ok")));
             }
         };
         var service = service(model);
         var chat = service.create("architect");
         UUID request = UUID.randomUUID();
-        assertThatThrownBy(() -> service.send("architect", chat.id(), request, "Запрос")).hasMessageContaining("JSON");
-        assertThat(service.get("architect", chat.id())).isEqualTo(chat);
-        incomplete.set(false); cancelAnswer.set(true);
-        var cancelled = service.stream("architect", chat.id(), request, "Запрос").take(4).collectList().block();
-        assertThat(cancelled).extracting(ChatService.StreamEvent::type)
-                .doesNotContain(ChatService.StreamEvent.Type.DELTA);
-        assertThat(service.get("architect", chat.id())).isEqualTo(chat);
-        cancelAnswer.set(false);
-        assertThat(service.send("architect", chat.id(), request, "Запрос").messages()).hasSize(2);
+        var recoveredEvents = service.stream("architect", chat.id(), request, "Запрос").collectList().block();
+        assertThat(recoveredEvents.getLast().warning()).contains("Память не обновлена");
+        var recovered = service.get("architect", chat.id());
+        assertThat(recovered.messages()).hasSize(2);
+        assertThat(recovered.workingMemory()).isEqualTo(chat.workingMemory());
+
+        incomplete.set(false);
+        var updated = service.send("architect", chat.id(), UUID.randomUUID(), "Уточнение");
+        assertThat(updated.workingMemory().goal()).isEqualTo("Сервис уведомлений");
     }
 }

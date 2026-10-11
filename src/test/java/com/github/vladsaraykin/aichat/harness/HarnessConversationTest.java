@@ -72,9 +72,12 @@ class HarnessConversationTest {
         assertThat(unknown.getLast().completed().content()).startsWith("Не знаю:");
         var withSource=new RequestContext(context.owner(),context.agentId(),context.chatId(),context.messageId(),context.content(),context.settings(),List.of(SOURCE),null,null);
         var parts=new ArrayList<Agent.AnswerPart>();
-        assertThatThrownBy(()->new ConfiguredAgent(definition,model).withRequestContext(withSource).answerStream(null,List.of(),user)
-                .doOnNext(parts::add).collectList().block()).isInstanceOf(ChatFailure.class);
-        assertThat(parts).isEmpty();
+        var safe= new ConfiguredAgent(definition,model).withRequestContext(withSource).answerStream(null,List.of(),user)
+                .doOnNext(parts::add).collectList().block();
+        assertThat(parts).hasSize(1);
+        assertThat(safe.getFirst().completed().content()).contains("Неподтверждённый текст скрыт")
+                .doesNotContain("Неверная ссылка");
+        assertThat(safe.getFirst().completed().evidence().grounding().reason()).isEqualTo("ANSWER_NOT_VERIFIABLE");
     }
     @Test void invalidGroundedAnswerGetsOneValidatedRepairWithoutLeakingRejectedText() throws Exception {
         var calls=new java.util.concurrent.atomic.AtomicInteger();
@@ -97,6 +100,30 @@ class HarnessConversationTest {
         assertThat(parts.getFirst().completed().content()).isEqualTo("Контролируйте переходы [1].");
         assertThat(parts.getFirst().completed().evidence().grounding().quotes())
                 .containsExactly(new RagQuestion.Evidence(1,QUOTE));
+    }
+
+    @Test void invalidRepairReturnsSafeInsufficientContextInsteadOfFailingTheChat() throws Exception {
+        var calls=new java.util.concurrent.atomic.AtomicInteger();
+        ConversationModel model=new ConversationModel() {
+            public Reply reply(AgentDefinition definition,List<ChatMessage> messages) { return replyInvalid(); }
+            public Flux<StreamPart> stream(AgentDefinition d,ContextSummary s,List<ChatMessage> messages,List<String> tools,RequestContext request) {
+                calls.incrementAndGet();
+                return Flux.just(StreamPart.completed(replyInvalid()));
+            }
+        };
+        var definition=new AgentRegistry(model,"classpath:agents/*.yaml").get("assistant").definition();
+        var user=new ChatMessage(UUID.randomUUID(),ChatMessage.Role.USER,"Вопрос",java.time.Instant.now(),null);
+        var context=new RequestContext("test","assistant",UUID.randomUUID(),user.id(),user.content(),
+                new ChatSettings(0,true,List.of(),null),List.of(SOURCE),null,null);
+
+        var answer=new ConfiguredAgent(definition,model).withRequestContext(context)
+                .answerStream(null,List.of(),user).collectList().block().getFirst().completed();
+
+        assertThat(calls).hasValue(2);
+        assertThat(answer.content()).contains("Не удалось проверить ответ", "Неподтверждённый текст скрыт")
+                .doesNotContain("Неверная ссылка");
+        assertThat(answer.evidence().sources()).containsExactly(SOURCE);
+        assertThat(answer.evidence().grounding().reason()).isEqualTo("ANSWER_NOT_VERIFIABLE");
     }
     private static ConversationModel.Reply replyInvalid() { return reply("{\"status\":\"ANSWERED\",\"answer\":\"Неверная ссылка [99]\",\"quotes\":[{\"sourceNumber\":99,\"quote\":\"Несуществующая цитата\"}]}"); }
     private static ConversationModel.Reply reply(String text) {

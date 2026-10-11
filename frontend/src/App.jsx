@@ -16,6 +16,7 @@ import RagDocuments from './components/RagDocuments'
 import ToolApproval from './components/ToolApproval'
 import RequestUsage from './components/RequestUsage'
 import RetrievalSettings from './components/RetrievalSettings'
+import HealthMonitor from './components/HealthMonitor'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
 const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
@@ -407,7 +408,7 @@ export default function App({ api = agentApi }) {
 
   return <main className="app-shell unified-shell">
     <header className="harness-topbar"><a className="brand" href="/">AI Advent<span>Рабочее пространство агента</span></a>
-      <div className="harness-tabs" role="tablist" aria-label="Разделы приложения">{[['chat', 'Чат'], ['rag', 'RAG'], ['mcp', 'MCP']].map(([id, label]) =>
+      <div className="harness-tabs" role="tablist" aria-label="Разделы приложения">{[['chat', 'Чат'], ['rag', 'RAG'], ['mcp', 'MCP'], ['health', 'Мониторинг']].map(([id, label]) =>
         <button key={id} type="button" role="tab" aria-selected={activeView === id} aria-current={activeView === id ? 'page' : undefined} onClick={() => setActiveView(id)}>{label}</button>)}</div>
       <UserProfile profile={profile} api={api} disabled={pending || memoryBusy} onProfile={setProfile} onLogout={logout} />
     </header>
@@ -416,7 +417,7 @@ export default function App({ api = agentApi }) {
       activeView={activeView} onView={setActiveView}
       disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onAgent={setAgentId} onChat={openChat}
       onCreate={createChat} onDelete={(target, trigger) => { deleteTrigger.current = trigger; setDeleteTarget(target) }} />}
-    {activeView === 'mcp' ? <McpCatalog embedded servers={mcpServers} loading={mcpLoading} error={mcpError}
+    {activeView === 'health' ? <HealthMonitor api={api} /> : activeView === 'mcp' ? <McpCatalog embedded servers={mcpServers} loading={mcpLoading} error={mcpError}
       onReload={() => setReload(value => value + 1)} profile={profile} api={api}
       onProfile={setProfile} onLogout={logout} /> : activeView === 'rag' ?
       <RagDocuments embedded key={profile.username} api={api} profile={profile} onProfile={setProfile} onLogout={logout} /> : <>

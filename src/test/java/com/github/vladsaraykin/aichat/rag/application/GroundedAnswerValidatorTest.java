@@ -28,6 +28,15 @@ class GroundedAnswerValidatorTest {
             assertThatThrownBy(() -> validator.validate(raw,sources)).isInstanceOf(GroundedAnswerValidator.Failure.class);
         }
     }
+
+    @Test void reportsOnlySanitizedValidationReasonForDiagnostics() {
+        assertThatThrownBy(() -> validator.validate(payload("Ответ [1]",1,"Несуществующая цитата"),sources))
+                .isInstanceOfSatisfying(GroundedAnswerValidator.Failure.class,
+                        failure -> assertThat(failure.reason()).isEqualTo("quote_not_in_source"));
+        assertThatThrownBy(() -> validator.validate("not json",sources))
+                .isInstanceOfSatisfying(GroundedAnswerValidator.Failure.class,
+                        failure -> assertThat(failure.reason()).isEqualTo("invalid_json"));
+    }
     @Test void refusesEvenWhenRetrievedSourcesExist() {
         var result=validator.validate("{\"status\":\"INSUFFICIENT_CONTEXT\",\"answer\":\"\",\"quotes\":[]}",sources);
         assertThat(result.text()).contains("Не знаю","Уточните");
