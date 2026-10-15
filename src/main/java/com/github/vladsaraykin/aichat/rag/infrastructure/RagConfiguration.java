@@ -68,6 +68,11 @@ public class RagConfiguration {
     }
 
     @Bean
+    ProjectDocumentSyncRepository projectDocumentSyncRepository(@Qualifier("ragJdbcTemplate") JdbcTemplate jdbc) {
+        return new ProjectDocumentSyncRepository(jdbc);
+    }
+
+    @Bean
     DocumentService ragDocumentService(DocumentRepository repository, DocumentStore store, DocumentExtractor extractor) {
         return new DocumentService(repository, store, extractor);
     }

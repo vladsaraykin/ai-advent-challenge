@@ -5,14 +5,15 @@ public record AgentDefinition(String id, String name, String description, String
                               String reasoningEffort, int timeoutSeconds, int maxHistoryChars,
                               TokenPricing pricing, ContextCompression compression, ContextManagement contextManagement,
                               MemoryLayers memoryLayers, InvariantSettings invariants, LifecycleSettings lifecycle,
-                              com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider provider) {
-    public AgentDefinition(String id,String name,String description,String model,String systemPrompt,
-            int maxCompletionTokens,String reasoningEffort,int timeoutSeconds,int maxHistoryChars,
-            TokenPricing pricing,ContextCompression compression,ContextManagement contextManagement,
-            MemoryLayers memoryLayers,InvariantSettings invariants,LifecycleSettings lifecycle) {
-        this(id,name,description,model,systemPrompt,maxCompletionTokens,reasoningEffort,timeoutSeconds,maxHistoryChars,
-                pricing,compression,contextManagement,memoryLayers,invariants,lifecycle,
-                com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider.OPENAI);
+                              java.util.List<ModelOption> modelOptions) {
+    public AgentDefinition(String id, String name, String description, String model,
+                           String systemPrompt, int maxCompletionTokens, String reasoningEffort,
+                           int timeoutSeconds, int maxHistoryChars, TokenPricing pricing,
+                           ContextCompression compression, ContextManagement contextManagement,
+                           MemoryLayers memoryLayers, InvariantSettings invariants, LifecycleSettings lifecycle) {
+        this(id, name, description, model, systemPrompt, maxCompletionTokens, reasoningEffort,
+                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement,
+                memoryLayers, invariants, lifecycle, java.util.List.of());
     }
     public AgentDefinition(String id, String name, String description, String model,
                            String systemPrompt, int maxCompletionTokens, String reasoningEffort,
@@ -52,7 +53,6 @@ public record AgentDefinition(String id, String name, String description, String
     }
 
     public AgentDefinition {
-        if(provider==null) provider=com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider.OPENAI;
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) {
             throw new IllegalArgumentException("Invalid agent id");
         }
@@ -67,19 +67,43 @@ public record AgentDefinition(String id, String name, String description, String
             throw new IllegalArgumentException("Invalid agent limits");
         }
         if (reasoningEffort != null && !reasoningEffort.isBlank()
-                && (!model.startsWith("gpt-5") || !java.util.Set.of("low", "medium", "high").contains(reasoningEffort))) {
-            throw new IllegalArgumentException("reasoningEffort supports low/medium/high for GPT-5 models");
+                && (!model.startsWith("gpt-5") || !java.util.Set.of("none", "low", "medium", "high", "xhigh", "max").contains(reasoningEffort))) {
+            throw new IllegalArgumentException("Invalid reasoning effort for GPT-5 model");
         }
         if (compression == null) compression = ContextCompression.disabled();
         if (contextManagement == null) contextManagement = ContextManagement.defaults();
         if (memoryLayers == null) memoryLayers = MemoryLayers.disabled();
         if (invariants == null) invariants = InvariantSettings.disabled();
         if (lifecycle == null) lifecycle = LifecycleSettings.disabled();
+        modelOptions = modelOptions == null ? java.util.List.of() : java.util.List.copyOf(modelOptions);
     }
 
     public AgentDefinition withPrompt(String prompt, int limit) {
         return new AgentDefinition(id, name, description, model, prompt, limit, reasoningEffort,
-                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement, memoryLayers, invariants, lifecycle, provider);
+                timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement, memoryLayers, invariants, lifecycle, modelOptions);
+    }
+
+    public AgentDefinition withModel(String selectedModel, String selectedEffort) {
+        if (modelOptions.isEmpty()) throw new IllegalArgumentException("Model selection is not configured for this agent");
+        ModelOption option = modelOptions.stream().filter(item -> item.id().equals(selectedModel)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Model is not available for this agent"));
+        String effort = selectedEffort == null || selectedEffort.isBlank() ? option.defaultReasoningEffort() : selectedEffort;
+        if (effort != null && !option.reasoningEfforts().contains(effort))
+            throw new IllegalArgumentException("Reasoning effort is not available for selected model");
+        return new AgentDefinition(id, name, description, selectedModel, systemPrompt, maxCompletionTokens, effort,
+                timeoutSeconds, maxHistoryChars, option.pricing(), compression, contextManagement, memoryLayers,
+                invariants, lifecycle, modelOptions);
+    }
+
+    public record ModelOption(String id, String label, java.util.List<String> reasoningEfforts,
+                              String defaultReasoningEffort, TokenPricing pricing) {
+        public ModelOption {
+            if (id == null || id.isBlank() || label == null || label.isBlank() || pricing == null)
+                throw new IllegalArgumentException("Invalid model option");
+            reasoningEfforts = reasoningEfforts == null ? java.util.List.of() : java.util.List.copyOf(reasoningEfforts);
+            if (defaultReasoningEffort != null && !reasoningEfforts.contains(defaultReasoningEffort))
+                throw new IllegalArgumentException("Invalid default reasoning effort");
+        }
     }
 
     public record LifecycleSettings(boolean enabled, int maxCompletionTokens, String guardPrompt) {

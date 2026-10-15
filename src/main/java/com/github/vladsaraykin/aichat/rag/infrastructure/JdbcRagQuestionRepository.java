@@ -39,18 +39,27 @@ public final class JdbcRagQuestionRepository implements RagQuestionRepository {
                 question.id(), owner, question.indexId(), json.writeValueAsString(question)) == 1;
     }
     @Override public List<RagQuestion.Source> searchAll(String owner,String model,float[] embedding,int topK) {
+        return searchDocuments(owner, model, embedding, topK, null);
+    }
+    @Override public List<RagQuestion.Source> searchDocuments(String owner,String model,float[] embedding,int topK,
+                                                               List<UUID> documentIds) {
         if(embedding.length!=768 || topK<1 || topK>50) throw new EmbeddingModel.Failure("INVALID_EMBEDDING");
+        if(documentIds!=null && documentIds.isEmpty()) return List.of();
+        if(documentIds!=null && documentIds.size()>500) throw new EmbeddingModel.Failure("INVALID_DOCUMENT_SCOPE");
         var vector=new StringJoiner(",","[","]");double norm=0;
         for(float value:embedding) {
             if(!Float.isFinite(value)) throw new EmbeddingModel.Failure("INVALID_EMBEDDING");
             norm+=(double)value*value;vector.add(Float.toString(value));
         }
         if(norm==0) throw new EmbeddingModel.Failure("INVALID_EMBEDDING");
-        return jdbc.query("""
+        String documentFilter=documentIds==null ? "" : " AND document_id IN ("+
+                String.join(",",java.util.Collections.nCopies(documentIds.size(),"?"))+")";
+        String sql="""
                 WITH active AS (
                   SELECT DISTINCT ON(document_id) id FROM rag.index_runs
                   WHERE owner_username=? AND status='COMPLETED'
                     AND regexp_replace(embedding_model,':latest$','')=regexp_replace(?,':latest$','')
+                """+documentFilter+"""
                   ORDER BY document_id,(strategy='STRUCTURAL') DESC,created_at DESC,id DESC
                 )
                 SELECT c.*,1-(c.embedding OPERATOR(public.<=>) ?::public.vector) AS similarity,
@@ -58,10 +67,14 @@ public final class JdbcRagQuestionRepository implements RagQuestionRepository {
                 FROM rag.chunks c JOIN active a ON a.id=c.run_id
                 WHERE c.owner_username=? AND c.embedding IS NOT NULL AND public.vector_norm(c.embedding)>0
                 ORDER BY c.embedding OPERATOR(public.<=>) ?::public.vector,c.id LIMIT ?
-                """,(rs,n)->new RagQuestion.Source(n+1,new DocumentChunk(rs.getObject("id",UUID.class),rs.getInt("ordinal"),
+                """;
+        var args=new java.util.ArrayList<Object>();
+        args.add(owner);args.add(model);if(documentIds!=null)args.addAll(documentIds);
+        args.add(vector.toString());args.add(owner);args.add(vector.toString());args.add(topK);
+        return jdbc.query(sql,(rs,n)->new RagQuestion.Source(n+1,new DocumentChunk(rs.getObject("id",UUID.class),rs.getInt("ordinal"),
                     rs.getString("source"),rs.getString("title"),rs.getString("section"),rs.getObject("page_start",Integer.class),
                     rs.getObject("page_end",Integer.class),rs.getInt("start_offset"),rs.getInt("end_offset"),
-                    rs.getString("content"),rs.getInt("token_count")),rs.getDouble("similarity")),owner,model,vector.toString(),owner,vector.toString(),topK);
+                    rs.getString("content"),rs.getInt("token_count")),rs.getDouble("similarity")),args.toArray());
     }
     @Override public void save(String owner, RagQuestion question) {
         if (jdbc.update("UPDATE rag.questions SET payload=?::jsonb WHERE owner_username=? AND id=?",

@@ -1,4 +1,20 @@
 # Shared task memory and controlled lifecycle for every configured agent.
+default-model: gpt-5.6-sol
+model-options:
+  - id: gpt-4.1-mini
+    label: GPT-4.1 mini
+    pricing:
+      input-per-million-usd: 0.40
+      cached-input-per-million-usd: 0.10
+      output-per-million-usd: 1.60
+  - id: gpt-5.6-sol
+    label: GPT-5.6 Sol
+    reasoning-efforts: none,low,medium,high,xhigh,max
+    default-reasoning-effort: medium
+    pricing:
+      input-per-million-usd: 4.00
+      cached-input-per-million-usd: 0.40
+      output-per-million-usd: 20.00
 memory-layers:
   enabled: true
   recent-messages: 10

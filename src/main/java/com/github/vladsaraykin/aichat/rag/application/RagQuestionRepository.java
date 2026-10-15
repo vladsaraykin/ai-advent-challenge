@@ -8,6 +8,10 @@ public interface RagQuestionRepository {
     default List<RagQuestion.Source> searchAll(String owner,String embeddingModel,float[] vector,int topK) {
         throw new UnsupportedOperationException("Corpus search not supported");
     }
+    default List<RagQuestion.Source> searchDocuments(String owner,String embeddingModel,float[] vector,int topK,
+                                                      List<UUID> documentIds) {
+        throw new UnsupportedOperationException("Document-scoped search not supported");
+    }
     boolean create(String owner, RagQuestion question);
     void save(String owner, RagQuestion question);
     Optional<RagQuestion> find(String owner, UUID id);

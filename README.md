@@ -1,17 +1,22 @@
 # AI Advent Challenge — агент с RAG, памятью и MCP
 
-День 27: единый web-harness на React + Java 21 / Spring Boot с локальной MLX-моделью
-и сохранёнными возможностями RAG, памяти и MCP.
-Качественную оценку ответов пользователь выполняет самостоятельно.
+Java 21 / Spring Boot и React-приложение для работы с диалоговыми агентами, памятью,
+RAG и MCP. Документация для ассистента разработчика находится в [`project/docs`](project/docs/README.md).
+Описание архитектуры и сценариев обновляется вместе с кодом; список известных
+подключённых сервисов и баз данных — в [инфраструктурной заметке](project/docs/infrastructure.md).
+
+Поддержка Markdown-проектной документации и её автоматической синхронизации описана
+в [правилах актуализации RAG](project/docs/rag-maintenance.md).
 
 ## Интерфейс
 
-- **Чат**: выбор агента и провайдера OpenAI / Local MLX, история и ветки, RAG-переключатель, SSE-статусы, ответы и источники.
+- **Чат**: выбор агента, история и ветки, RAG-переключатель, SSE-статусы, ответы и источники.
   Enter отправляет; Shift+Enter добавляет строку. Запрос показывается сразу,
   composer очищается сразу, при ошибке восстанавливается черновик.
-  RAG и провайдер LLM находятся в панели «Память и настройки» после создания чата;
+  Свойства чата находятся в панели «Память и настройки» после создания чата;
   суммарный расход отображается под полем ввода. Блок скачивания общих отчётов удалён из UI.
-- **RAG**: PDF / DOC / DOCX до 20 МиБ, извлечённый текст, fixed-size / structural chunking,
+- **RAG**: PDF / DOC / DOCX загрузка через UI; README/Markdown проекта индексируются автоматически.
+  Также есть fixed-size / structural chunking,
   индексация и статистика PostgreSQL. OCR для сканов не предусмотрен.
 - **MCP**: подключения, статусы, инструменты, описания и входные схемы.
 - **Память и настройки**: сворачиваемая правая панель с задачей, этапами, инвариантами,
@@ -21,6 +26,9 @@
 могут изменяться для следующих запросов. При включённом RAG ищем по всем готовым
 документам текущего пользователя: один завершённый индекс на документ с подходящей
 embedding-моделью; приоритет STRUCTURAL, затем последний завершённый индекс.
+`README.md` и `project/docs/**/*.md` автоматически синхронизируются с RAG-профилем
+`vlad` при запуске и каждую минуту. Новая версия заменяет старую только после
+успешной индексации; остальные документы профиля синхронизатор не удаляет.
 
 ## RAG-запрос в диалоге
 
@@ -116,14 +124,6 @@ Embedding usage и время поиска сохраняются в retrieval t
 
 ## Разработка и запуск
 
-День 27: в чате доступен выбор **OpenAI / Local MLX**. Провайдер сохраняется в PostgreSQL
-и фиксируется для каждого запроса. Local MLX использует Qwen для ответа, памяти,
-сжатия и RAG rewrite, работает без OPENAI_API_KEY и не переключается в облако при ошибке.
-[Запуск MLX и локального режима](deploy/llm/readme.md).
-MLX: `127.0.0.1:18081`, backend: `localhost:8080`, UI: `localhost:5173`.
-Стоимость локальных вызовов — без платы API, токены берутся из MLX usage.
-MCP для MLX отключён по умолчанию; включается через LOCAL_LLM_TOOLS_ENABLED после проверки поддержки.
-
 Нужны Java 21+, Maven, Node.js 22+, PostgreSQL с pgvector,
 Ollama (embeddinggemma, 768 измерений), reranker из deploy/reranker.
 [Windows/WSL2 GPU-инструкция](deploy/rag-gpu/README.md).
@@ -159,8 +159,8 @@ Vite проксирует /api. В IDEA задайте те же перемен�
 он заменяет bundled-набор. После изменений перезапустите backend.
 Proxy: OPENAI_PROXY_ENABLED/HOST/PORT. Ключи не передаются React.
 
-MCP: MCP_FILESYSTEM_ENTRYPOINT/ROOT, MCP_EXCEL_COMMAND/DIRECTORY,
-MCP_EXPENSES_URL/ENDPOINT. Expenses по умолчанию — http://127.0.0.1:8090/mcp.
+Подключаются проектные MCP-серверы через stdio: filesystem (`MCP_FILESYSTEM_ROOT`),
+project-git (`MCP_PROJECT_GIT_ROOT`) и excel (`MCP_EXCEL_DIRECTORY`).
 Без MCP: MCP_ENABLED=false. Не давайте filesystem-MCP доступ к секретам или backup.
 
 ## Проверки
@@ -200,7 +200,8 @@ Mock-тесты: два диалога по 12 ходов с проверкой 
   GET /pending, GET /usage, GET /requests/{requestId},
   POST /requests/{requestId}/approval/stream, DELETE /requests/{requestId}.
 - /api/harness/knowledge/stats — статистика текущего владельца.
-- /api/rag/documents, /indexes, /chunks — загрузка и индексация.
+- `/api/rag/documents` — загрузка/просмотр; `DELETE /api/rag/documents/{id}` удаляет документ владельца.
+- `/api/rag/documents/{document}/indexes`, `/api/rag/indexes/{run}/chunks` — индексация и просмотр чанков.
 - /api/mcp/servers — discovery без выполнения инструментов.
 
 SSE: retrieving, проверки, обновление памяти, generating, delta, approval,

@@ -66,18 +66,26 @@ public class HarnessService {
                 throw new ChatFailure(ChatFailure.Kind.BUSY,"Запрос уже выполняется.");
             acquired.set(!old.get().status().equals("COMPLETED"));
             if(context.ragEnabled() && context.retrieval()==null) {
-                context=rag.prepare(context,chat,agents.get(agent).definition());
+                context=rag.prepare(context,chat,requestDefinition(agent,context.settings()));
                 requests.context(context);
             }
             return context;
         }
         var preferences=settings.get(owner,agent,chatId);
-        var initial=new RequestContext(owner,agent,chatId,id,content,preferences,preferences.ragEnabled() ? List.of() : null,null,null);
+        var help=ProjectHelpCommand.parse(content);
+        boolean gitBranch=ProjectGitCommand.requestsCurrentBranch(content,Set.copyOf(preferences.mcpServerIds()));
+        var initial=new RequestContext(owner,agent,chatId,id,content,preferences,
+                !gitBranch && (help.isPresent() || preferences.ragEnabled()) ? List.of() : null,null,null,
+                help.isPresent(),help.map(ProjectHelpCommand::question).orElse(null),gitBranch);
         requests.create(initial);
         acquired.set(true);
-        var prepared=rag.prepare(initial,chat,agents.get(agent).definition());
+        var prepared=rag.prepare(initial,chat,requestDefinition(agent,preferences));
         requests.context(prepared);
         return prepared;
+    }
+    private AgentDefinition requestDefinition(String agentId, ChatSettings selected) {
+        var definition=agents.get(agentId).definition();
+        return selected.model()==null ? definition : definition.withModel(selected.model(),selected.reasoningEffort());
     }
     @jakarta.annotation.PreDestroy public void close() { workers.dispose(); }
 }

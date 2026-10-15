@@ -44,6 +44,12 @@ public class DocumentController {
         return view(service.get(principal.getName(), id));
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(Principal principal, @PathVariable UUID id) {
+        service.delete(principal.getName(), id);
+    }
+
     private DocumentView view(RagDocument document) {
         return new DocumentView(document.summary(), document.extracted().text(), document.extracted().metadata());
     }

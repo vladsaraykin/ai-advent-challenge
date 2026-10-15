@@ -28,7 +28,7 @@ export default function MessageList({ messages, agent, pending, pendingMessage =
         {message.metrics.usageAvailable !== false && <span>Вход API: {formatTokens(message.metrics.promptTokens)}
           {message.metrics.cachedPromptTokens > 0 && <> · из кэша: {formatTokens(message.metrics.cachedPromptTokens)}</>}
           {' '}· Ответ: {formatTokens(message.metrics.completionTokens)}</span>}
-        <span className="message-cost">Стоимость: {message.metrics.provider === 'LOCAL_MLX' ? 'локально · без оплаты API' : message.metrics.totalCostUsd != null
+        <span className="message-cost">Стоимость: {message.metrics.totalCostUsd != null
           ? `${formatUsd(message.metrics.totalCostUsd)} (вход ${formatUsd(message.metrics.inputCostUsd)} · ответ ${formatUsd(message.metrics.outputCostUsd)})`
           : 'нет данных — сообщение создано до включения расчёта'}</span>
         {message.metrics.finishReason === 'length' && <span className="truncation-note">Ответ достиг лимита токенов. Попросите агента продолжить.</span>}

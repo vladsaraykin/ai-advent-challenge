@@ -1,0 +1,4 @@
+interface:
+  display_name: "React JavaScript"
+  short_description: "Build accessible React frontends"
+  default_prompt: "Build or modify the React frontend using the repository's component, state, and styling conventions."

@@ -69,8 +69,10 @@ public class McpApprovalService {
         var current=chats.get(context.owner(),context.agentId(),context.chatId()).workingMemory();
         if(current.status()==com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Status.PAUSED)
             throw new ChatFailure(ChatFailure.Kind.INVALID,"Продолжите задачу перед выполнением MCP.");
-        if(current.stage()==com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Stage.REQUIREMENTS
-                || current.stage()==com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Stage.DONE)
+        boolean projectReadOnly = (context.projectHelp() || context.mcpOnly()) && server.equals("project-git")
+                && Set.of("get_current_branch", "list_project_files").contains(tool);
+        if(!projectReadOnly && (current.stage()==com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Stage.REQUIREMENTS
+                || current.stage()==com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Stage.DONE))
             return "Инструмент не вызван: MCP-действия разрешены только на Execution/Validation. Предложи согласовать план или начать новую задачу.";
         if(raw==null || raw.length()>12000) throw new ChatFailure(ChatFailure.Kind.INVALID,"Параметры MCP слишком большие.");
         String input;

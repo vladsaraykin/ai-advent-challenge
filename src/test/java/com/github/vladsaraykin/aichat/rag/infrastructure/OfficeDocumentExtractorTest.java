@@ -61,6 +61,16 @@ class OfficeDocumentExtractorTest {
         assertThat(result.metadata().blocks()).isNotEmpty();
     }
 
+    @Test void markdownRetainsTextAndRecognizesHeadings() throws Exception {
+        Path file = directory.resolve("project.md");
+        Files.writeString(file, "# Overview\n\nProject structure and API.");
+        var result = extractor.extract(file, "md");
+        assertThat(result.text()).contains("Project structure and API.");
+        assertThat(result.metadata().format()).isEqualTo("markdown");
+        assertThat(result.metadata().blocks()).singleElement()
+                .satisfies(block -> assertThat(block.heading()).isEqualTo("Overview"));
+    }
+
     @Test void mismatchedExtensionBrokenPdfAndNonWordZipAreRejected() throws Exception {
         Path text = directory.resolve("fake.pdf"); Files.writeString(text, "not a PDF");
         assertThatThrownBy(() -> extractor.extract(text, "pdf")).hasMessageContaining("не соответствует");

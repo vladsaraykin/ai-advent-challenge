@@ -1,6 +1,5 @@
 package com.github.vladsaraykin.aichat.health.application;
 
-import com.github.vladsaraykin.aichat.agent.infrastructure.LocalLlmProperties;
 import com.github.vladsaraykin.aichat.mcp.application.McpCatalogService;
 import com.github.vladsaraykin.aichat.rag.infrastructure.RagProperties;
 import com.github.vladsaraykin.aichat.rag.infrastructure.RerankerSettings;
@@ -32,7 +31,6 @@ public class HealthMonitorService {
 
     private final DataSource dataSource;
     private final RagProperties rag;
-    private final LocalLlmProperties localLlm;
     private final URI cloudModelsUri;
     private final String cloudApiKey;
     private final ObjectProvider<RerankerSettings> rerankerSettings;
@@ -46,20 +44,19 @@ public class HealthMonitorService {
     });
 
     @org.springframework.beans.factory.annotation.Autowired
-    public HealthMonitorService(DataSource dataSource, RagProperties rag, LocalLlmProperties localLlm,
+    public HealthMonitorService(DataSource dataSource, RagProperties rag,
             @Value("${spring.ai.openai.base-url:https://api.openai.com/v1}") URI cloudBaseUrl,
             @Value("${spring.ai.openai.api-key:missing-api-key}") String cloudApiKey,
             ObjectProvider<RerankerSettings> rerankerSettings, McpCatalogService mcpCatalog) {
-        this(dataSource, rag, localLlm, cloudBaseUrl, cloudApiKey, rerankerSettings, mcpCatalog,
+        this(dataSource, rag, cloudBaseUrl, cloudApiKey, rerankerSettings, mcpCatalog,
                 HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).followRedirects(HttpClient.Redirect.NEVER).build());
     }
 
-    HealthMonitorService(DataSource dataSource, RagProperties rag, LocalLlmProperties localLlm,
+    HealthMonitorService(DataSource dataSource, RagProperties rag,
             URI cloudBaseUrl, String cloudApiKey, ObjectProvider<RerankerSettings> rerankerSettings,
             McpCatalogService mcpCatalog, HttpClient http) {
         this.dataSource = dataSource;
         this.rag = rag;
-        this.localLlm = localLlm;
         this.cloudModelsUri = appendPath(cloudBaseUrl, "models");
         this.cloudApiKey = cloudApiKey;
         this.rerankerSettings = rerankerSettings;
@@ -71,7 +68,6 @@ public class HealthMonitorService {
         var definitions = List.<Probe>of(
                 new Probe("postgresql", "PostgreSQL", this::checkDatabase),
                 new Probe("openai", "OpenAI API", this::checkCloud),
-                new Probe("local-llm", "Локальная LLM", this::checkLocalLlm),
                 new Probe("ollama", "Ollama · embeddings", this::checkOllama),
                 new Probe("reranker", "Reranker", this::checkReranker),
                 new Probe("mcp", "MCP-серверы", this::checkMcp));
@@ -98,11 +94,6 @@ public class HealthMonitorService {
             return ProbeResult.notConfigured("API-ключ OpenAI не настроен");
         }
         return get(cloudModelsUri, cloudApiKey, "OpenAI API доступен");
-    }
-
-    private ProbeResult checkLocalLlm() {
-        if (!localLlm.enabled()) return ProbeResult.disabled("Локальная LLM отключена конфигурацией");
-        return get(appendPath(URI.create(localLlm.baseUrl()), "models"), null, "Локальная LLM API доступна");
     }
 
     private ProbeResult checkOllama() {

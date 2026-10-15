@@ -30,10 +30,5 @@ public record ChatMessage(UUID id, Role role, String content, Instant createdAt,
             this(model,durationMs,currentMessageTokens,historyTokens,systemPromptTokens,promptTokens,cachedPromptTokens,
                     completionTokens,totalTokens,inputCostUsd,outputCostUsd,totalCostUsd,finishReason,null,null);
         }
-        public Metrics asLocal() {
-            return new Metrics(model,durationMs,null,null,null,promptTokens,cachedPromptTokens,completionTokens,totalTokens,
-                    BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,finishReason,"LOCAL_MLX",
-                    promptTokens>0 || completionTokens>0 || totalTokens>0);
-        }
     }
 }

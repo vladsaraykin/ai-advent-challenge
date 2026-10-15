@@ -1,4 +1,0 @@
-FROM qwen2.5:7b-instruct-q4_K_M
-
-# Keep the existing Q4_K_M weights; configure the inference context only.
-PARAMETER num_ctx 8192

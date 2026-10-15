@@ -20,6 +20,7 @@ public class OfficeDocumentExtractor implements DocumentExtractor {
 
     @Override public ExtractedText extract(Path file, String extension) {
         try {
+            if ("md".equals(extension)) return markdown(file);
             try (var input = new BufferedInputStream(Files.newInputStream(file))) {
                 FileMagic magic = FileMagic.valueOf(input);
                 boolean matches = switch (extension) {
@@ -44,6 +45,17 @@ public class OfficeDocumentExtractor implements DocumentExtractor {
             throw new RagFailure(RagFailure.Kind.INVALID,
                     "Не удалось прочитать документ: файл повреждён, зашифрован или имеет неподдерживаемый формат.");
         }
+    }
+
+    private ExtractedText markdown(Path file) throws IOException {
+        String text = normalize(Files.readString(file, java.nio.charset.StandardCharsets.UTF_8));
+        if (text.isBlank()) throw new RagFailure(RagFailure.Kind.NO_TEXT, "Markdown-файл не содержит текста.");
+        if (text.length() > MAX_CHARACTERS) throw tooLarge();
+        var blocks = new ArrayList<ExtractedText.Block>();
+        var heading = java.util.regex.Pattern.compile("(?m)^#{1,6}\\h+(.+?)\\h*#*\\h*$").matcher(text);
+        while (heading.find()) blocks.add(new ExtractedText.Block("HEADING", heading.group(1).strip(), null,
+                heading.start(), heading.end()));
+        return new ExtractedText(text, new ExtractedText.Metadata("markdown", null, blocks, List.of()));
     }
 
     private ExtractedText pdf(Path file) throws IOException {

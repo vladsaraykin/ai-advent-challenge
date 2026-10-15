@@ -47,4 +47,15 @@ public class JdbcDocumentRepository implements DocumentRepository {
                             rs.getTimestamp("created_at").toInstant()), owner, id).stream().findFirst();
         } catch (RuntimeException exception) { throw RagFailure.storage(); }
     }
+
+    @Override public boolean delete(String owner, UUID id) {
+        try {
+            return jdbc.update("""
+                    WITH removed AS (
+                      DELETE FROM rag.documents WHERE owner_username=? AND id=? RETURNING storage_key
+                    )
+                    DELETE FROM rag.document_files WHERE storage_key IN (SELECT storage_key FROM removed)
+                    """, owner, id) > 0;
+        } catch (RuntimeException exception) { throw RagFailure.storage(); }
+    }
 }

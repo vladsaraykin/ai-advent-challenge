@@ -104,6 +104,18 @@ describe('agent conversations', () => {
     expect(await screen.findByRole('heading', { name: 'С чего начнём?' })).toBeInTheDocument()
   })
 
+  it('shows configured MCP connections and explains when the backend MCP client is disabled', async () => {
+    const api = makeApi()
+    api.mcpServers.mockResolvedValue(['filesystem', 'project-git', 'excel', 'expenses'].map(id => ({
+      id, name: id, version: null, protocolVersion: null, connected: false,
+      error: 'MCP отключён конфигурацией. Установите MCP_ENABLED=true и перезапустите backend.', tools: []
+    })))
+    render(<App api={api} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'MCP' }))
+    expect(await screen.findByRole('heading', { name: 'project-git' })).toBeInTheDocument()
+    expect(screen.getAllByText(/MCP_ENABLED=true/)).toHaveLength(4)
+  })
+
   it('shows dependency health and lets the user rerun checks in the monitoring tab', async () => {
     const api = makeApi()
     render(<App api={api} />)

@@ -56,6 +56,21 @@ class OpenAiConversationModelTest {
         assertThat(options.getResponseFormat().getType()).isEqualTo(org.springframework.ai.openai.OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT);
         assertThat(((OpenAiChatOptions) OpenAiConversationModel.prompt(d, List.of()).getOptions()).getResponseFormat()).isNull();
     }
+
+    @Test void disablesUnsupportedReasoningEffortForGpt56McpRequestsOnly() {
+        var gpt56 = new AgentDefinition("assistant", "Assistant", "Test", "gpt-5.6-sol",
+                "Prompt", 1024, "medium", 60, 10000, PRICING);
+        var original = OpenAiConversationModel.prompt(gpt56, null, List.of(), true);
+        var compatible = OpenAiConversationModel.compatibleToolRequest(gpt56, original, 2);
+        assertThat(((OpenAiChatOptions) compatible.getOptions()).getReasoningEffort()).isEqualTo("none");
+        assertThat(((OpenAiChatOptions) original.getOptions()).getReasoningEffort()).isEqualTo("medium");
+        assertThat(OpenAiConversationModel.compatibleToolRequest(gpt56, original, 0)).isSameAs(original);
+
+        var gpt41Request = OpenAiConversationModel.prompt(definition, null, List.of(), true);
+        assertThat(OpenAiConversationModel.compatibleToolRequest(definition, gpt41Request, 2))
+                .isSameAs(gpt41Request);
+    }
+
     private static final TokenPricing PRICING = new TokenPricing(
             new BigDecimal("0.40"), new BigDecimal("0.10"), new BigDecimal("1.60"));
     private final AgentDefinition definition = new AgentDefinition("architect", "Architect", "Architecture",

@@ -48,12 +48,9 @@ export default function App({ api = agentApi }) {
   const [mcpError, setMcpError] = useState('')
   const [mcpEnabled, setMcpEnabled] = useState(false)
   const [mcpServerIds, setMcpServerIds] = useState([])
-  const [settings, setSettings] = useState({ version: 0, ragEnabled: false, mcpServerIds: [], retrieval: { candidateK: 20, finalK: 5, threshold: .2 } })
+  const [settings, setSettings] = useState({ version: 0, ragEnabled: false, mcpServerIds: [], model: null, reasoningEffort: null, retrieval: { candidateK: 20, finalK: 5, threshold: .2 } })
   const [settingsReady, setSettingsReady] = useState(!api.chatSettings)
   const [settingsBusy, setSettingsBusy] = useState(false)
-  const [providers, setProviders] = useState([{ id: 'OPENAI', name: 'OpenAI', enabled: true }])
-  const [providersReady, setProvidersReady] = useState(!api.llmProviders)
-  const [providersError, setProvidersError] = useState('')
   const [transcript, setTranscript] = useState(null)
   const [approval, setApproval] = useState(null)
   const [inspectorOpen, setInspectorOpen] = useState(() => !window.matchMedia?.('(max-width: 850px)').matches)
@@ -63,20 +60,8 @@ export default function App({ api = agentApi }) {
   const busyRef = useRef(false)
   const deleteTrigger = useRef(null)
   const agent = agents.find(item => item.id === agentId)
-  const providerId = settings.provider || 'OPENAI'
-  const selectedProvider = providers.find(item => item.id === providerId)
-  const localToolsBlocked = providerId === 'LOCAL_MLX' && !selectedProvider?.toolsEnabled && settings.mcpServerIds.length > 0
   const draftKey = chat ? `${agentId}/${chat.id}` : agentId
   const draft = drafts[draftKey] || ''
-
-  useEffect(() => {
-    if (!profile || !api.llmProviders) return
-    let active = true
-    setProvidersReady(false); setProvidersError('')
-    api.llmProviders().then(items => { if (active) { setProviders(items); setProvidersReady(true) } })
-      .catch(exception => { if (active) setProvidersError(exception.message) })
-    return () => { active = false }
-  }, [api, profile?.username, reload])
 
   useEffect(() => {
     let active = true
@@ -149,13 +134,14 @@ export default function App({ api = agentApi }) {
   }, [chat?.id, chat?.updatedAt, agentId, pending, api])
 
   async function changeSettings(changes) {
-    if (pending || settingsBusy || approval) return
+    if (pending || settingsBusy || approval) return false
     const next = { ...settings, ...changes }
     setSettingsBusy(true); setError('')
     try {
       const saved = chat && api.saveChatSettings ? await api.saveChatSettings(agentId, chat.id, next) : next
       setSettings(saved); setMcpServerIds(saved.mcpServerIds); setMcpEnabled(!!saved.mcpServerIds.length)
-    } catch (exception) { setError(exception.message) }
+      return true
+    } catch (exception) { setError(exception.message); return false }
     finally { setSettingsBusy(false) }
   }
 
@@ -325,7 +311,7 @@ export default function App({ api = agentApi }) {
 
   async function send(event) {
     event.preventDefault()
-    if (busyRef.current || loading || !agent || !settingsReady || !providersReady || !selectedProvider?.enabled || localToolsBlocked || settingsBusy || approval) return
+    if (busyRef.current || loading || !agent || !settingsReady || settingsBusy || approval) return
     const content = draft.trim()
     if (!content) { setError('Введите сообщение'); return }
     if (mcpEnabled && !mcpServerIds.length) { setError('Выберите хотя бы один MCP-сервер'); return }
@@ -393,17 +379,6 @@ export default function App({ api = agentApi }) {
       disabled={pending || !settingsReady || settingsBusy || !!approval || chat?.readOnly} onChange={event => changeSettings({ ragEnabled: event.target.checked })} /> RAG</label>
       <span>{settings.ragEnabled ? 'Все мои документы · строгие источники' : 'Обычный диалог с LLM'}</span>
       {settingsBusy && <small role="status">Сохраняем настройки…</small>}</div>
-    <div className="chat-context-bar"><label>Провайдер LLM <select aria-label="Провайдер LLM" value={providerId}
-      disabled={pending || !!activeJob || !providersReady || !settingsReady || settingsBusy || !!approval || chat?.readOnly}
-      onChange={event => changeSettings({ provider: event.target.value })}>
-      {providers.map(item => <option key={item.id} value={item.id} disabled={!item.enabled}>{item.name}{!item.enabled ? ' — не настроен' : ''}</option>)}
-    </select></label>
-      {providerId === 'LOCAL_MLX' && <span>Локальная генерация · без оплаты API{!selectedProvider?.toolsEnabled && ' · MCP отключён'}</span>}
-      {providersError && <span role="alert">{providersError}</span>}
-      {!providersReady && !providersError && <span role="status">Загружаем провайдеров…</span>}
-      {providersReady && !selectedProvider?.enabled && <span role="alert">Выберите настроенного провайдера.</span>}
-      {localToolsBlocked && <span role="alert">Уберите выбранные MCP-серверы: для Local MLX инструменты отключены.</span>}
-    </div>
   </section>
 
   return <main className="app-shell unified-shell">
@@ -425,8 +400,7 @@ export default function App({ api = agentApi }) {
     <section className="conversation" aria-label="Диалог с агентом">
       <header className="conversation-header"><div><span className="eyebrow">{agent?.name || 'Личный помощник'}</span><h1>{chat?.title || agent?.name || 'Новый диалог'}</h1>
         <p>{agent?.description || 'Выберите помощника для своей задачи'}</p></div>
-        <div className="header-actions">{agent && <span className="model-name">{providerId === 'LOCAL_MLX' ? selectedProvider?.model || 'Local MLX' : agent.model}</span>}
-          {chat && <button className="inspector-toggle" aria-expanded={inspectorOpen} onClick={() => setInspectorOpen(value => !value)}>Память и настройки</button>}</div></header>
+        <div className="header-actions">{chat && <button className="inspector-toggle" aria-expanded={inspectorOpen} onClick={() => setInspectorOpen(value => !value)}>Память и настройки</button>}</div></header>
       {!chat && chatControls}
       {!loading && !chat && <StrategyPanel agent={agent} chat={chat} strategy={strategy} onStrategy={setStrategy}
         disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onFork={forkChat} onOpen={openChat} chats={chats} />}
@@ -444,10 +418,13 @@ export default function App({ api = agentApi }) {
       {error && <div className="error-banner" role="alert"><span>{error}</span>
         {!pending && <button type="button" onClick={() => { setError(''); setReload(value => value + 1) }}>Обновить</button>}</div>}
       <MessageComposer draft={draft} onChange={value => setDrafts(current => ({ ...current, [draftKey]: value }))}
-        onSubmit={send} pending={pending} showMcpControls={!api.chatSettings} disabled={loading || !providersReady || !selectedProvider?.enabled || localToolsBlocked || !settingsReady || settingsBusy || !!approval || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy}
+        onSubmit={send} pending={pending} showMcpControls={!api.chatSettings} disabled={loading || !settingsReady || settingsBusy || !!approval || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy}
         mcpServers={mcpServers.filter(item => item.connected && !item.error && item.tools?.length)}
         mcpEnabled={mcpEnabled} mcpServerIds={mcpServerIds}
-        onMcpEnabled={setMcpEnabled} onMcpServer={setMcpServerIds} />
+        onMcpEnabled={setMcpEnabled} onMcpServer={setMcpServerIds}
+        modelOptions={agent?.modelOptions || []} defaultModel={agent?.model || ''}
+        selectedModel={settings.model} selectedReasoning={settings.reasoningEffort}
+        onModelSelection={selection => changeSettings(selection)} />
       {!loading && <ChatUsageSummary messages={chat?.messages || []} summary={chat?.summary} memory={chat?.memory}
         workingMemory={chat?.workingMemory} invariants={chat?.invariants} lifecycle={chat?.lifecycle} />}
       <RequestUsage requests={requestUsage} />

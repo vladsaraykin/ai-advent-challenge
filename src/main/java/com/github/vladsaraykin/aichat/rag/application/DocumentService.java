@@ -33,7 +33,8 @@ public class DocumentService {
             case "pdf" -> "application/pdf";
             case "doc" -> "application/msword";
             case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            default -> throw new RagFailure(RagFailure.Kind.UNSUPPORTED, "Поддерживаются только PDF, DOC и DOCX.");
+            case "md" -> "text/markdown; charset=utf-8";
+            default -> throw new RagFailure(RagFailure.Kind.UNSUPPORTED, "Поддерживаются PDF, DOC, DOCX и Markdown.");
         };
         if (!extractionSlot.tryAcquire()) {
             throw new RagFailure(RagFailure.Kind.BUSY, "Другой документ уже обрабатывается. Повторите загрузку позже.");
@@ -79,6 +80,21 @@ public class DocumentService {
         validateOwner(owner);
         return repository.find(owner, id).orElseThrow(() ->
                 new RagFailure(RagFailure.Kind.NOT_FOUND, "Документ не найден."));
+    }
+
+    public void delete(String owner, UUID id) {
+        validateOwner(owner);
+        if (!repository.delete(owner, id)) throw new RagFailure(RagFailure.Kind.NOT_FOUND, "Документ не найден.");
+    }
+
+    public boolean exists(String owner, UUID id) {
+        validateOwner(owner);
+        return repository.find(owner, id).isPresent();
+    }
+
+    public boolean deleteIfPresent(String owner, UUID id) {
+        validateOwner(owner);
+        return repository.delete(owner, id);
     }
 
     private static void validateOwner(String owner) {

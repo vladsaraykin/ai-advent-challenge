@@ -36,7 +36,7 @@ class McpCatalogServiceTest {
         when(client.listTools()).thenReturn(new McpSchema.ListToolsResult(List.of(read), "next", Map.of()));
         when(client.listTools("next")).thenReturn(new McpSchema.ListToolsResult(List.of(write), null, Map.of()));
 
-        var result = new McpCatalogService(provider(List.of(client))).servers();
+        var result = new McpCatalogService(provider(List.of(client)), true).servers();
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().id()).isEqualTo("filesystem");
@@ -56,12 +56,33 @@ class McpCatalogServiceTest {
         when(client.getServerInfo()).thenReturn(implementation("filesystem", "Filesystem", "1"));
         when(client.listTools()).thenThrow(new IllegalStateException("raw server details"));
 
-        var result = new McpCatalogService(provider(List.of(client))).servers().getFirst();
+        var result = new McpCatalogService(provider(List.of(client)), true).servers().getFirst();
 
         assertThat(result.connected()).isFalse();
         assertThat(result.error()).isEqualTo("Не удалось получить список инструментов от MCP-сервера.");
         assertThat(result.error()).doesNotContain("raw server details");
         assertThat(result.tools()).isEmpty();
+    }
+
+    @Test
+    void explainsWhenMcpIsDisabledInsteadOfReturningAnEmptyCatalog() {
+        var result = new McpCatalogService(provider(List.of()), false).servers();
+
+        assertThat(result).extracting("id")
+                .contains("filesystem", "project-git", "excel");
+        assertThat(result).allSatisfy(server -> {
+            assertThat(server.connected()).isFalse();
+            assertThat(server.error()).contains("MCP_ENABLED=true");
+        });
+    }
+
+    @Test
+    void derivesStableConnectionIdFromServerMetadataNotSharedClientMetadata() {
+        var client = mock(McpSyncClient.class);
+        when(client.getClientInfo()).thenReturn(implementation("shared-client", "", "1"));
+        when(client.getServerInfo()).thenReturn(implementation("ai-advent-project-git", "Project Git", "1"));
+
+        assertThat(McpCatalogService.connectionId(client)).isEqualTo("project-git");
     }
 
     private static McpSchema.Implementation implementation(String name, String title, String version) {

@@ -32,7 +32,9 @@ public class AgentController {
                             boolean contextCompression, int recentMessages, int summaryBatchSize,
                             ContextStrategyType defaultStrategy, List<ContextStrategyType> strategies,
                             int slidingMessages, int factsMessages, boolean memoryLayers, int memoryRecentMessages,
-                            boolean invariants, boolean lifecycle) {
+                            boolean invariants, boolean lifecycle, List<ModelChoiceView> modelOptions) {
+        public record ModelChoiceView(String id, String label, List<String> reasoningEfforts,
+                                      String defaultReasoningEffort) { }
         static AgentView from(AgentDefinition definition) {
             return new AgentView(definition.id(), definition.name(), definition.description(),
                     definition.model(), definition.maxCompletionTokens(), definition.compression().enabled(),
@@ -40,7 +42,9 @@ public class AgentController {
                     definition.contextManagement().defaultStrategy(), List.of(ContextStrategyType.values()),
                     definition.contextManagement().slidingMessages(), definition.contextManagement().factsMessages(),
                     definition.memoryLayers().enabled(), definition.memoryLayers().recentMessages(),
-                    definition.invariants().enabled(), definition.lifecycle().enabled());
+                    definition.invariants().enabled(), definition.lifecycle().enabled(),
+                    definition.modelOptions().stream().map(option -> new ModelChoiceView(option.id(), option.label(),
+                            option.reasoningEfforts(), option.defaultReasoningEffort())).toList());
         }
     }
     public record ChatSummary(UUID id, String agentId, String title, Instant updatedAt, int messageCount,

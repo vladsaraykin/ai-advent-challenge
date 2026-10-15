@@ -270,7 +270,10 @@ public class ChatService {
                 throw new ChatFailure(ChatFailure.Kind.INVALID, "Этот диалог сохранён как checkpoint. Выберите ветку для продолжения.");
             }
             ContextStrategy strategy = ContextStrategy.forType(chat.strategy());
-            boolean layered = agent.definition().memoryLayers().enabled();
+            boolean projectHelp = context != null && context.projectHelp();
+            boolean mcpOnly = context != null && context.mcpOnly();
+            boolean externalReadRequest = projectHelp || mcpOnly;
+            boolean layered = agent.definition().memoryLayers().enabled() && !externalReadRequest;
             LongTermMemory durable = layered ? memory(ownerId, agentId) : LongTermMemory.empty();
             List<LongTermMemory.Entry> entries = durable.relevant(chat.workingMemory().projectKey());
             UserProfile profile = users == null ? UserProfile.initial(ownerId) : users.profile(ownerId);
@@ -278,7 +281,7 @@ public class ChatService {
             log.info("agent_stream_request agentId={} chatId={} requestId={} strategy={} historyMessages={} "
                             + "promptLength={} mcpServers={}",
                     agentId, chatId, messageId, chat.strategy(), chat.messages().size(), content.length(), mcpServerIds);
-            Mono<Prepared> preparation = Mono.defer(() -> layered && chat.strategy() == ContextStrategyType.FACTS
+            Mono<Prepared> preparation = Mono.defer(() -> externalReadRequest || layered && chat.strategy() == ContextStrategyType.FACTS
                             ? Mono.just(chat) : strategy.before(agent, chat, user))
                     .map(value -> new Prepared(value, null, false))
                     .onErrorResume(ChatFailure.class, failure -> summaryFallback(chat, failure));
@@ -296,12 +299,12 @@ public class ChatService {
                         return Mono.just(new Prepared(prepared.chat(), warning, true));
                     }));
             final Mono<Prepared> finalPreparation = preparation;
-            boolean lifecycleActive = agent.definition().lifecycle().enabled() && layered;
-            boolean invariantActive = agent.definition().invariants().enabled() && !chat.invariants().entries().isEmpty();
+            boolean lifecycleActive = !externalReadRequest && agent.definition().lifecycle().enabled() && layered;
+            boolean invariantActive = !externalReadRequest && agent.definition().invariants().enabled() && !chat.invariants().entries().isEmpty();
             boolean guardActive = lifecycleActive || invariantActive;
             Flux<StreamEvent> guarded;
             if (!guardActive) {
-                guarded = phase(layered ? "UPDATING_MEMORY" : strategy.beforePhase(agent, chat),
+                guarded = phase(layered ? "UPDATING_MEMORY" : externalReadRequest ? null : strategy.beforePhase(agent, chat),
                         finalPreparation.flatMapMany(prepared -> streamingAnswer(ownerId, agentId, messageId, agent,
                                 strategy, prepared, user, entries, profile, layered, mcpServerIds)));
             } else {
@@ -349,7 +352,10 @@ public class ChatService {
                         profile, mcpServerIds)
                 .concatMap(part -> {
             if (part.completed() == null) return Mono.just(StreamEvent.delta(part.delta()));
-            Mono<Chat> appended = Mono.defer(() -> agent.completeMemory(prepared.chat(), user, part.completed()))
+            Mono<WorkingMemory> nextMemory = layered
+                    ? Mono.defer(() -> agent.completeMemory(prepared.chat(), user, part.completed()))
+                    : Mono.just(prepared.chat().workingMemory());
+            Mono<Chat> appended = nextMemory
                     .map(memory -> prepared.chat().withWorkingMemory(memory).append(user, part.completed()));
             Flux<StreamEvent> completion = appended.flatMapMany(value -> finalizeTurn(ownerId, agentId,
                     messageId, agent, strategy, prepared, value, part.completed()));

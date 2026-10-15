@@ -24,7 +24,7 @@ it('keeps chat properties in the inspector and usage below the composer', async 
   render(<App api={api} />)
   await screen.findByText('Сохранённая полная история')
   const inspector = screen.getByRole('complementary', { name: 'Параметры и память текущего чата' })
-  expect(within(inspector).getByRole('combobox', { name: 'Провайдер LLM' })).toBeInTheDocument()
+  expect(within(inspector).queryByRole('combobox', { name: 'Провайдер LLM' })).not.toBeInTheDocument()
   expect(within(inspector).getByRole('checkbox', { name: 'RAG', exact: true })).toBeInTheDocument()
   const conversation = screen.getByRole('region', { name: 'Диалог с агентом' })
   expect(within(conversation).queryByRole('combobox', { name: 'Провайдер LLM' })).not.toBeInTheDocument()
@@ -35,22 +35,7 @@ it('keeps chat properties in the inspector and usage below the composer', async 
   expect(screen.queryByRole('combobox', { name: 'Провайдер LLM' })).not.toBeInTheDocument()
 })
 
-it('persists Local MLX selection and restores the local model without requiring OpenAI', async () => {
-  const api = apiFixture()
-  api.llmProviders = vi.fn().mockResolvedValue([
-    { id: 'OPENAI', name: 'OpenAI', enabled: false },
-    { id: 'LOCAL_MLX', name: 'Local MLX', model: 'mlx-community/Qwen3.5-9B-4bit', enabled: true, toolsEnabled: false }
-  ])
-  render(<App api={api} />)
-  await screen.findByText('Сохранённая полная история')
-  expect(await screen.findByText('Выберите настроенного провайдера.')).toBeInTheDocument()
-  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Провайдер LLM' }), 'LOCAL_MLX')
-  await waitFor(() => expect(api.saveChatSettings).toHaveBeenCalledWith('assistant', 'chat-a', { ...settings, provider: 'LOCAL_MLX' }))
-  expect(await screen.findByText('mlx-community/Qwen3.5-9B-4bit')).toBeInTheDocument()
-  expect(screen.getByText(/Локальная генерация/)).toBeInTheDocument()
-})
-
-it('shows local API billing separately and never presents absent token usage as zero', async () => {
+it('does not label historical local-provider messages and never presents absent token usage as zero', async () => {
   const api = apiFixture()
   api.chatHistory.mockResolvedValue([{ id: 'local-answer', role: 'ASSISTANT', content: 'Локальный ответ', metrics: {
     model: 'qwen', provider: 'LOCAL_MLX', usageAvailable: false, totalTokens: 0, promptTokens: 0,
@@ -58,7 +43,8 @@ it('shows local API billing separately and never presents absent token usage as 
   } }])
   render(<App api={api} />)
   expect(await screen.findByText(/Токены: сервер не вернул данные/)).toBeInTheDocument()
-  expect(screen.getByText('Стоимость: локально · без оплаты API')).toBeInTheDocument()
+  expect(screen.queryByText(/локально|Local MLX/)).not.toBeInTheDocument()
+  expect(screen.getByText(/Стоимость: \$0\.000000/)).toBeInTheDocument()
   expect(screen.queryByText(/Вход API: 0/)).not.toBeInTheDocument()
 })
 

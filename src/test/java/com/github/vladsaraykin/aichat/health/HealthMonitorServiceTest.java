@@ -3,7 +3,6 @@ package com.github.vladsaraykin.aichat.health.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-import com.github.vladsaraykin.aichat.agent.infrastructure.LocalLlmProperties;
 import com.github.vladsaraykin.aichat.mcp.application.McpCatalogService;
 import com.github.vladsaraykin.aichat.rag.infrastructure.RagProperties;
 import com.github.vladsaraykin.aichat.rag.infrastructure.RerankerSettings;
@@ -49,8 +48,6 @@ class HealthMonitorServiceTest {
         var statement = mock(java.sql.Statement.class);
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.createStatement()).thenReturn(statement);
-        var local = new LocalLlmProperties(true, baseUrl + "/v1", "local-model", 2048, 30, 1, 0.3,
-                false, false, "json", "questions");
         var rag = new RagProperties(
                 new RagProperties.Database("jdbc:postgresql://localhost/db", "user", "secret", 5, Duration.ofSeconds(3)),
                 new RagProperties.Ollama(URI.create(baseUrl), "embeddinggemma", 768,
@@ -61,12 +58,12 @@ class HealthMonitorServiceTest {
         when(mcp.servers()).thenReturn(List.of(new McpServerView("filesystem", "Filesystem", "1", "1",
                 true, null, List.<McpToolView>of())));
 
-        var report = new HealthMonitorService(dataSource, rag, local, URI.create(baseUrl + "/v1"),
+        var report = new HealthMonitorService(dataSource, rag, URI.create(baseUrl + "/v1"),
                 "private-api-key", reranker, mcp, http).check();
 
         assertThat(report.status()).isEqualTo("UP");
         assertThat(report.checks()).extracting(HealthMonitorService.Check::status)
-                .containsExactly("UP", "UP", "UP", "UP", "UP", "UP");
+                .containsExactly("UP", "UP", "UP", "UP", "UP");
         assertThat(report.checks()).extracting(HealthMonitorService.Check::message)
                 .contains("Ollama доступна; embedding-модель найдена", "Reranker доступен");
         assertThat(report.toString()).doesNotContain("private-api-key", "secret", "embeddinggemma:latest");

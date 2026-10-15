@@ -22,7 +22,7 @@ class AgentRegistryTest {
         assertThat(registry.get("architect").definition().lifecycle().guardPrompt()).contains("PREMATURE_EXECUTION");
         assertThat(registry.get("architect").definition().pricing()).isEqualTo(registry.get("techno").definition().pricing());
         assertThat(registry.get("assistant").definition().name()).isEqualTo("Личный ассистент");
-        assertThat(registry.get("assistant").definition().model()).isEqualTo("gpt-4.1-mini");
+        assertThat(registry.get("assistant").definition().model()).isEqualTo("gpt-5.6-sol");
         assertThat(registry.get("assistant").definition().contextManagement().defaultStrategy().name())
                 .isEqualTo("SLIDING_WINDOW");
         assertThat(registry.get("assistant").definition().memoryLayers().enabled()).isTrue();
@@ -30,6 +30,26 @@ class AgentRegistryTest {
         assertThat(registry.get("chef").definition().memoryLayers().enabled()).isTrue();
         assertThat(registry.get("chef").definition().invariants().enabled()).isTrue();
         assertThat(registry.get("chef").definition().lifecycle().enabled()).isTrue();
+        var chef = registry.get("chef").definition();
+        assertThat(chef.reasoningEffort()).isEqualTo("medium");
+        assertThat(chef.pricing().inputPerMillionUsd()).isEqualByComparingTo("4.00");
+        assertThat(chef.modelOptions()).extracting(com.github.vladsaraykin.aichat.agent.domain.AgentDefinition.ModelOption::id)
+                .contains("gpt-4.1-mini", "gpt-5.6-sol");
+        var selected = chef.withModel("gpt-5.6-sol", "xhigh");
+        assertThat(selected.reasoningEffort()).isEqualTo("xhigh");
+        assertThat(selected.pricing().inputPerMillionUsd()).isEqualByComparingTo("4.00");
+        assertThat(selected.withPrompt("temporary prompt", 512).reasoningEffort()).isEqualTo("xhigh");
+        assertThatThrownBy(() -> chef.withModel("gpt-4.1-mini", "high"))
+                .hasMessageContaining("not available");
+        var context = new com.github.vladsaraykin.aichat.harness.domain.RequestContext("owner", "chef",
+                java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), "question",
+                new com.github.vladsaraykin.aichat.harness.domain.ChatSettings(0, false, java.util.List.of(), null,
+                        com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider.OPENAI,
+                        "gpt-5.6-sol", "xhigh"), null, null, null);
+        var requestAgent = registry.get("chef").withRequestContext(context);
+        assertThat(requestAgent.definition().model()).isEqualTo("gpt-5.6-sol");
+        assertThat(requestAgent.definition().reasoningEffort()).isEqualTo("xhigh");
+        assertThat(requestAgent.definition().pricing().outputPerMillionUsd()).isEqualByComparingTo("20.00");
         assertThatThrownBy(() -> new com.github.vladsaraykin.aichat.agent.domain.AgentDefinition.MemoryLayers(true, 3, 3000, "prompt"))
                 .hasMessageContaining("memory layer");
         Files.writeString(directory.resolve("custom.yaml"), CONFIG + "memory-layers:\n  enabled: true\n  recent-messages: 3\n");
@@ -58,12 +78,7 @@ class AgentRegistryTest {
             id: custom
             name: Custom agent
             description: Custom role
-            model: gpt-4.1-mini
             max-completion-tokens: 8192
-            pricing:
-              input-per-million-usd: 0.40
-              cached-input-per-million-usd: 0.10
-              output-per-million-usd: 1.60
             system-prompt: |
               Ты новый агент.
               Используй собственные инструкции.
@@ -74,7 +89,8 @@ class AgentRegistryTest {
         var registry = new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml");
         assertThat(registry.definitions()).hasSize(1);
         assertThat(registry.get("custom").definition().maxCompletionTokens()).isEqualTo(8192);
-        assertThat(registry.get("custom").definition().pricing().outputPerMillionUsd()).isEqualByComparingTo("1.60");
+        assertThat(registry.get("custom").definition().model()).isEqualTo("gpt-5.6-sol");
+        assertThat(registry.get("custom").definition().pricing().outputPerMillionUsd()).isEqualByComparingTo("20.00");
         assertThat(registry.get("custom").definition().systemPrompt()).contains("Используй собственные инструкции");
     }
 
@@ -88,14 +104,10 @@ class AgentRegistryTest {
                 .hasMessageContaining("Invalid agent id");
     }
 
-    @Test void missingOrInvalidPricingFailsAtStartup() throws Exception {
-        Files.writeString(directory.resolve("custom.yaml"), CONFIG.replace("  output-per-million-usd: 1.60\n", ""));
+    @Test void invalidSharedDefaultModelFailsAtStartup() throws Exception {
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + "default-model: unknown-model\n");
         assertThatThrownBy(() -> new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml"))
-                .hasMessageContaining("pricing.output-per-million-usd");
-        Files.writeString(directory.resolve("custom.yaml"), CONFIG.replace("cached-input-per-million-usd: 0.10",
-                "cached-input-per-million-usd: 0.50"));
-        assertThatThrownBy(() -> new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml"))
-                .hasMessageContaining("Cached input price");
+                .hasMessageContaining("Default model is not listed in model-options");
     }
 
     @Test void validatesAndLoadsContextCompressionSettings() throws Exception {
@@ -107,7 +119,7 @@ class AgentRegistryTest {
                   summary-max-completion-tokens: 512
                   system-prompt: Сохрани важные факты.
                 """;
-        Files.writeString(directory.resolve("custom.yaml"), CONFIG.replace("pricing:\n", compression + "pricing:\n"));
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + compression);
         var registry = new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml");
         var settings = registry.get("custom").definition().compression();
         assertThat(settings.enabled()).isTrue();
@@ -115,8 +127,7 @@ class AgentRegistryTest {
         assertThat(settings.batchSize()).isEqualTo(6);
         assertThat(settings.maxCompletionTokens()).isEqualTo(512);
 
-        Files.writeString(directory.resolve("custom.yaml"), CONFIG.replace("pricing:\n",
-                compression.replace("recent-messages: 8", "recent-messages: 7") + "pricing:\n"));
+        Files.writeString(directory.resolve("custom.yaml"), CONFIG + compression.replace("recent-messages: 8", "recent-messages: 7"));
         assertThatThrownBy(() -> new AgentRegistry((definition, messages) -> null, directory.toUri() + "*.yaml"))
                 .hasMessageContaining("compression");
     }

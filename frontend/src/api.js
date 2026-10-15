@@ -75,7 +75,6 @@ export const agentApi = {
   }),
   mcpServers: () => rawRequest('/api/mcp/servers'),
   health: () => rawRequest('/api/health/dependencies'),
-  llmProviders: () => rawRequest('/api/llm/providers'),
   knowledgeStats: () => rawRequest('/api/harness/knowledge/stats'),
   ragAnswerSettings: signal => rawRequest('/api/rag/answer-settings', { signal }),
   ragRetrievalSettings: signal => rawRequest('/api/rag/retrieval-settings', { signal }),

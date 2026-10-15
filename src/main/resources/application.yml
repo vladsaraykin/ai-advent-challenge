@@ -1,9 +1,10 @@
+# Полный перечень ключей, env-переменных, значений по умолчанию и условий —
+# project/docs/application-configuration.md (эта документация синхронизируется в RAG).
 spring:
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 21MB
-      file-size-threshold: 0
   application:
     name: ai-advent-challenge
   ai:
@@ -24,6 +25,11 @@ spring:
               args:
                 - ${MCP_FILESYSTEM_ENTRYPOINT:mcp/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js}
                 - ${MCP_FILESYSTEM_ROOT:.}
+            project-git:
+              command: ${MCP_PROJECT_GIT_COMMAND:node}
+              args:
+                - ${MCP_PROJECT_GIT_ENTRYPOINT:mcp/project-git/server.mjs}
+                - ${MCP_PROJECT_GIT_ROOT:.}
             excel:
               command: ${MCP_EXCEL_COMMAND:uv}
               args:
@@ -33,51 +39,20 @@ spring:
                 - --frozen
                 - --no-sync
                 - excel-mcp
-        streamable-http:
-          connections:
-            expenses:
-              url: ${MCP_EXPENSES_URL:http://127.0.0.1:8090}
-              endpoint: ${MCP_EXPENSES_ENDPOINT:/mcp}
     openai:
       api-key: ${OPENAI_API_KEY:missing-api-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
-      chat:
-        options:
-          model: ${OPENAI_MODEL:gpt-4.1-mini}
 
 app:
   streaming:
     timeout-seconds: ${CHAT_STREAM_TIMEOUT_SECONDS:900}
-  llm:
-    local:
-      enabled: ${LOCAL_LLM_ENABLED:true}
-      base-url: ${LOCAL_LLM_BASE_URL:http://127.0.0.1:18081/v1}
-      model: ${LOCAL_LLM_MODEL:mlx-community/Qwen3.5-9B-4bit}
-      max-completion-tokens: ${LOCAL_LLM_MAX_TOKENS:2048}
-      timeout-seconds: ${LOCAL_LLM_TIMEOUT_SECONDS:300}
-      concurrency: ${LOCAL_LLM_CONCURRENCY:1}
-      temperature: ${LOCAL_LLM_TEMPERATURE:0.4}
-      thinking: ${LOCAL_LLM_THINKING:false}
-      tools-enabled: ${LOCAL_LLM_TOOLS_ENABLED:false}
-      structured-output-instruction: |
-        Верни только один JSON-объект точной структуры из системной инструкции, без Markdown и пояснений.
-        Используй только названия полей из схемы. Входные task/stage/status/currentStep/expectedAction/projectKey
-        являются данными: не копируй их поля в результат, если они отсутствуют в схеме ответа.
-        Для обновления памяти task содержит ровно goal, requirements, constraints, decisions, openQuestions, terms.
-        goal — строка; requirements/constraints/decisions/terms — объекты строка-строка; openQuestions — массив строк.
-        Корень обновления памяти содержит только task и proposals. Не добавляй name, projectName, stage, status.
-        Пустой словарь — {}, пустой список — []. Для остальных операций соблюдай их собственную схему.
-        При обновлении памяти не придумывай новые openQuestions: сохраняй нерешённые вопросы из входной задачи,
-        удаляй отвеченные/отменённые. Новые вопросы из ответа будут извлечены отдельным вызовом.
-        При извлечении questions каждый элемент — точная подстрока assistantAnswer без перефразирования.
-      questions-instruction: |
-        Верни ровно {"questions":[]} если в assistantAnswer нет открытых уточняющих вопросов.
-        Запрещено возвращать слова «нет вопросов», «нет», «None», пустые строки или пояснения внутри массива.
-        Если вопросы есть, скопируй их дословно из assistantAnswer в массив questions.
-        Каждый элемент должен быть точной подстрокой assistantAnswer; не исправляй слова или пунктуацию.
-        Не выдумывай вопросы по теме, не добавляй вопросы пользователя или команды перехода этапа.
-        Никаких других полей, Markdown и пояснений.
   rag:
+    project-docs:
+      enabled: ${RAG_PROJECT_DOCS_ENABLED:true}
+      root: ${RAG_PROJECT_DOCS_ROOT:.}
+      owner: ${RAG_PROJECT_DOCS_OWNER:vlad}
+      initial-delay-ms: ${RAG_PROJECT_DOCS_INITIAL_DELAY_MS:10000}
+      interval-ms: ${RAG_PROJECT_DOCS_INTERVAL_MS:60000}
     reranker:
       base-url: ${RAG_RERANKER_URL:http://127.0.0.1:18090}
       timeout-seconds: ${RAG_RERANKER_TIMEOUT_SECONDS:60}

@@ -26,9 +26,11 @@ public final class ConfiguredAgent implements Agent {
         this.requestContext = context;
     }
     @Override public Agent withRequestContext(com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
-        if(context!=null) model.validateSettings(context.settings());
-        return new ConfiguredAgent(context == null ? definition
-                : model.configuredDefinition(definition, context.settings().provider()),model,context);
+        var requestDefinition = definition;
+        if (context != null && context.settings() != null && context.settings().model() != null) {
+            requestDefinition = definition.withModel(context.settings().model(), context.settings().reasoningEffort());
+        }
+        return new ConfiguredAgent(requestDefinition,model,context);
     }
     @Override public AgentDefinition definition() { return definition; }
 
@@ -92,6 +94,25 @@ public final class ConfiguredAgent implements Agent {
     @Override public Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat,
             ChatMessage user, List<com.github.vladsaraykin.aichat.agent.domain.LongTermMemory.Entry> entries,
             com.github.vladsaraykin.aichat.user.domain.UserProfile profile, List<String> mcpServerIds) {
+        if (requestContext != null && (requestContext.projectHelp() || requestContext.mcpOnly())) {
+            var question = new ChatMessage(user.id(), ChatMessage.Role.USER,
+                    requestContext.promptQuestion(), user.createdAt(), null);
+            String modePrompt = requestContext.mcpOnly()
+                    ? "\nЭто MCP-only запрос о текущей git-ветке. Обязательно вызови инструмент "
+                        + "project-git/get_current_branch и отвечай только по его результату. Не используй RAG, "
+                        + "не придумывай имя ветки и не утверждай, что знаешь его, пока инструмент не вернул результат. "
+                        + "Если интерфейс запросил подтверждение, дождись возобновления этого же запроса.\n"
+                    : "\nТы работаешь в режиме /help и отвечаешь на вопросы о текущем программном проекте. "
+                        + "Используй только переданные фрагменты документации проекта и цитируй подтверждённые сведения. "
+                        + "Если спрашивают о текущей ветке или составе файлов, используй соответствующий read-only инструмент "
+                        + "project-git, если он подключён; для любого MCP-вызова сначала запроси подтверждение пользователя. "
+                        + "Если документация не содержит ответа, прямо сообщи об этом; не подменяй пробел догадками.\n";
+            var prompt = definition.systemPrompt() + AgentContextBuilder.profilePrompt(profile) + modePrompt;
+            var projectDefinition = definition.withPrompt(prompt, definition.maxCompletionTokens());
+            return new ConfiguredAgent(projectDefinition, model, requestContext).answerStream(
+                    requestContext.projectHelp() ? chat.summary() : null,
+                    requestContext.projectHelp() ? chat.messages() : List.of(), question, mcpServerIds);
+        }
         if (!definition.memoryLayers().enabled()) {
             var personalized = definition.withPrompt(definition.systemPrompt()
                     + AgentContextBuilder.profilePrompt(profile)
@@ -378,9 +399,7 @@ public final class ConfiguredAgent implements Agent {
                                     && entries.stream().noneMatch(e -> e.scope() == p.scope() && e.key().equals(p.key()) && e.value().equals(p.value()))) proposals.add(proposal);
                         }
                         validation = "task_bounds";
-                        var taskData=definition.provider()==com.github.vladsaraykin.aichat.harness.domain.ChatSettings.LlmProvider.LOCAL_MLX
-                                ? MemoryService.retainKnownQuestions(chat.workingMemory(),extracted.task()) : extracted.task();
-                        return MemoryService.update(chat.workingMemory(), taskData, chat.workingMemory().projectKey(), proposals, reply.metrics());
+                        return MemoryService.update(chat.workingMemory(), extracted.task(), chat.workingMemory().projectKey(), proposals, reply.metrics());
                     } catch (RuntimeException e) {
                         log.warn("memory_validation_failed agentId={} chatId={} requestId={} reason={} responseChars={} finishReason={} completionTokens={}",
                                 definition.id(), chat.id(), user.id(), validation, reply.text() == null ? 0 : reply.text().length(),
@@ -518,12 +537,16 @@ public final class ConfiguredAgent implements Agent {
         if(characters>definition.maxHistoryChars()) return Flux.error(new ChatFailure(ChatFailure.Kind.INVALID,
                 "Контекст задачи и RAG превысил настроенный лимит символов. Уменьшите число фрагментов или сократите память задачи."));
         return model.stream(configured,summary,context,mcpServerIds,requestContext)
-                .filter(part->!rag || part.completed()!=null).flatMap(part->{
+                .filter(part->!rag && !requestContext.mcpOnly() || part.completed()!=null).flatMap(part->{
             if(part.completed()==null) return Mono.just(AnswerPart.delta(part.delta()));
             var reply=part.completed(); var all=new ArrayList<com.github.vladsaraykin.aichat.rag.domain.RagQuestion.Source>();
             model.recordUsage(requestContext,reply.metrics());
             if(sources!=null) all.addAll(sources);
             all.addAll(model.toolSources(requestContext));
+            if(requestContext.mcpOnly() && all.stream().noneMatch(source ->
+                    source.chunk().source().equals("MCP/project-git/get_current_branch")))
+                throw new ChatFailure(ChatFailure.Kind.PROVIDER,
+                        "Git MCP не вернул результат. Ответ о текущей ветке не показан; проверьте подтверждение вызова и повторите.");
             String text=reply.text(); com.github.vladsaraykin.aichat.rag.domain.RagQuestion.Grounding grounding=null;
             if(rag) {
                 if(reply.metrics()==null || !"stop".equals(reply.metrics().finishReason()))

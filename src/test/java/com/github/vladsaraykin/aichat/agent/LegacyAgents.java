@@ -13,7 +13,8 @@ final class LegacyAgents {
                 d.model(), d.systemPrompt(), d.maxCompletionTokens(), d.reasoningEffort(), d.timeoutSeconds(), d.maxHistoryChars(),
                 d.pricing(), d.compression(), new AgentDefinition.ContextManagement(ContextStrategyType.SUMMARY,
                 d.contextManagement().slidingMessages(), d.contextManagement().factsMessages(), d.contextManagement().factsMaxTokens(),
-                d.contextManagement().factsPrompt()))).toList();
+                d.contextManagement().factsPrompt()), AgentDefinition.MemoryLayers.disabled(),
+                AgentDefinition.InvariantSettings.disabled(), AgentDefinition.LifecycleSettings.disabled(), d.modelOptions())).toList();
         return new AgentCatalog() {
             public List<AgentDefinition> definitions() { return definitions; }
             public Agent get(String id) { return new ConfiguredAgent(definitions.stream().filter(d -> d.id().equals(id)).findFirst()

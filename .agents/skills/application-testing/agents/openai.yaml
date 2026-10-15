@@ -1,0 +1,4 @@
+interface:
+  display_name: "Application Testing"
+  short_description: "Test the finance assistant end to end"
+  default_prompt: "Plan and run focused tests for the changed application behavior, including relevant financial and integration invariants."

@@ -32,7 +32,7 @@ class RagContextServiceTest {
         var reranker=mock(Reranker.class);
         when(reranker.score(anyString(),anyList())).thenReturn(List.of(.95));
         var usage=mock(HarnessRequestRepository.class);
-        var service=new RagContextService(model,embeddings,properties(),provider(repository),provider(selection),provider(reranker),usage);
+        var service=new RagContextService(model,embeddings,properties(),provider(repository),provider(selection),provider(reranker),provider(null),usage);
         var chat=Chat.create("assistant").withWorkingMemory(MemoryService.update(WorkingMemory.empty(),
                 new MemoryService.TaskData("Разобраться в PDLC",Map.of(),Map.of("team","2 человека"),Map.of(),List.of()),"",List.of(),null));
         chat=chat.append(new ChatMessage(UUID.randomUUID(),ChatMessage.Role.USER,"Что такое PDLC?",Instant.now(),null),
@@ -54,13 +54,52 @@ class RagContextServiceTest {
     }
     @Test void ordinaryChatDoesNotRewriteEmbedOrSearch() {
         var model=mock(ConversationModel.class);var embeddings=mock(EmbeddingModel.class);var usage=mock(HarnessRequestRepository.class);
-        var service=new RagContextService(model,embeddings,properties(),provider(null),provider(null),provider(null),usage);
+        var service=new RagContextService(model,embeddings,properties(),provider(null),provider(null),provider(null),provider(null),usage);
         var chat=Chat.create("assistant");
         var request=new RequestContext("alice","assistant",chat.id(),UUID.randomUUID(),"Привет",ChatSettings.defaults(),null,null,null);
         assertThat(service.prepare(request,chat,null)).isSameAs(request);
-        verify(model).validateSettings(request.settings());
-        verifyNoMoreInteractions(model);
         verifyNoInteractions(embeddings,usage);
+    }
+    @Test void mcpOnlyRequestSkipsRagEvenWhenChatRagIsEnabled() {
+        var model=mock(ConversationModel.class);var embeddings=mock(EmbeddingModel.class);var usage=mock(HarnessRequestRepository.class);
+        var service=new RagContextService(model,embeddings,properties(),provider(null),provider(null),provider(null),provider(null),usage);
+        var chat=Chat.create("assistant");
+        var request=new RequestContext("alice","assistant",chat.id(),UUID.randomUUID(),"Получи текущую git-ветку",
+                new ChatSettings(0,true,List.of("project-git"),null),null,null,null,false,null,true);
+
+        assertThat(service.prepare(request,chat,null)).isSameAs(request);
+        verifyNoInteractions(model,embeddings,usage);
+    }
+    @Test void projectHelpUsesOnlySynchronizedProjectDocumentsEvenWhenChatRagIsOff() throws Exception {
+        var metrics=new ChatMessage.Metrics("fixture",2,0,0,0,10,0,2,12,null,null,null,"stop");
+        var observedInput=new AtomicReference<String>();
+        ConversationModel model=(d,messages)-> { observedInput.set(messages.getFirst().content());return new ConversationModel.Reply("Где хранится API?",metrics); };
+        var definition=new AgentRegistry(model,"classpath:agents/*.yaml").get("assistant").definition();
+        var embeddings=mock(EmbeddingModel.class);var vector=new float[768];vector[0]=1;
+        when(embeddings.embed(anyString())).thenReturn(new EmbeddingModel.Result(vector,3L));
+        UUID docId=UUID.randomUUID();
+        var manifest=mock(ProjectDocumentSyncRepository.class);
+        when(manifest.activeDocumentIds("alice")).thenReturn(List.of(docId));
+        var repository=mock(RagQuestionRepository.class);
+        var source=new RagQuestion.Source(1,new DocumentChunk(UUID.randomUUID(),0,"project__README.md","README","Setup",
+                null,null,0,20,"The API starts from the documented app entry point.",9),.8);
+        when(repository.searchDocuments(eq("alice"),eq("embeddinggemma"),same(vector),eq(20),eq(List.of(docId))))
+                .thenReturn(List.of(source));
+        var reranker=mock(Reranker.class);when(reranker.score(anyString(),anyList())).thenReturn(List.of(.91));
+        var usage=mock(HarnessRequestRepository.class);
+        var service=new RagContextService(model,embeddings,properties(),provider(repository),
+                provider(new RagSourceSelector(text->text.length()/4,6000)),provider(reranker),provider(manifest),usage);
+        var chat=Chat.create("assistant");
+        var request=new RequestContext("alice","assistant",chat.id(),UUID.randomUUID(),"/help Где хранится API?",
+                new ChatSettings(0,false,List.of(),null),List.of(),null,null,true,"Где хранится API?");
+
+        var prepared=service.prepare(request,chat,definition);
+
+        assertThat(prepared.sources()).containsExactly(source);
+        assertThat(observedInput.get()).contains("Где хранится API?").doesNotContain("/help");
+        verify(repository).searchDocuments("alice","embeddinggemma",vector,20,List.of(docId));
+        verify(repository,never()).searchAll(anyString(),anyString(),any(),anyInt());
+        verify(reranker).score(eq("Где хранится API?\nКонтекст вопроса: Где хранится API?"),anyList());
     }
     @SuppressWarnings("unchecked") private static <T> ObjectProvider<T> provider(T value) {
         ObjectProvider<T> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(value);when(provider.getObject()).thenReturn(value);return provider;

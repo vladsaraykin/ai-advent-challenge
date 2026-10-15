@@ -9,4 +9,5 @@ public interface DocumentRepository {
     void insert(RagDocument document);
     List<RagDocument.Summary> list(String owner, int limit, int offset);
     Optional<RagDocument> find(String owner, UUID id);
+    boolean delete(String owner, UUID id);
 }

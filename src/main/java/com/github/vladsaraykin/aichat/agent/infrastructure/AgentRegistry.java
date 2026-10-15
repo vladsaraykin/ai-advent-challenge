@@ -30,17 +30,23 @@ public class AgentRegistry implements AgentCatalog {
             Properties properties = new Properties();
             shared.forEach((key,value) -> properties.setProperty(key.toString(), Objects.toString(value)));
             Objects.requireNonNull(yaml.getObject()).forEach((key,value) -> properties.setProperty(key.toString(), Objects.toString(value)));
+            var options = modelOptions(properties);
+            String configuredModel = Objects.requireNonNull(properties.getProperty("default-model"),
+                    "Missing shared setting: default-model");
+            var defaultOption = options.stream().filter(option -> option.id().equals(configuredModel)).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Default model is not listed in model-options: " + configuredModel));
+            var configuredPricing = defaultOption.pricing();
+            String reasoningEffort = defaultOption.defaultReasoningEffort();
             var definition = new AgentDefinition(properties.getProperty("id"), properties.getProperty("name"),
-                    properties.getProperty("description"), properties.getProperty("model"),
+                    properties.getProperty("description"), configuredModel,
                     properties.getProperty("system-prompt"),
                     Integer.parseInt(properties.getProperty("max-completion-tokens", "4096")),
-                    properties.getProperty("reasoning-effort"),
+                    reasoningEffort,
                     Integer.parseInt(properties.getProperty("timeout-seconds", "120")),
                     Integer.parseInt(properties.getProperty("max-history-chars", "60000")),
-                    new TokenPricing(requiredDecimal(properties, "pricing.input-per-million-usd"),
-                            requiredDecimal(properties, "pricing.cached-input-per-million-usd"),
-                            requiredDecimal(properties, "pricing.output-per-million-usd")),
-                    compression(properties), management(properties), layers(properties), invariants(properties), lifecycle(properties));
+                    configuredPricing,
+                    compression(properties), management(properties), layers(properties), invariants(properties), lifecycle(properties),
+                    options);
             if (loaded.putIfAbsent(definition.id(), new ConfiguredAgent(definition, model)) != null) {
                 throw new IllegalArgumentException("Duplicate agent id: " + definition.id());
             }
@@ -62,6 +68,22 @@ public class AgentRegistry implements AgentCatalog {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing agent setting: " + key);
         try { return new BigDecimal(value); }
         catch (NumberFormatException exception) { throw new IllegalArgumentException("Invalid agent setting: " + key); }
+    }
+
+    private static List<AgentDefinition.ModelOption> modelOptions(Properties p) {
+        var options = new ArrayList<AgentDefinition.ModelOption>();
+        for (int i = 0; p.getProperty("model-options[" + i + "].id") != null; i++) {
+            String prefix = "model-options[" + i + "].";
+            String efforts = p.getProperty(prefix + "reasoning-efforts", "").strip();
+            options.add(new AgentDefinition.ModelOption(p.getProperty(prefix + "id"),
+                    p.getProperty(prefix + "label", p.getProperty(prefix + "id")),
+                    efforts.isEmpty() ? List.of() : Arrays.stream(efforts.split(",")).map(String::strip).filter(s -> !s.isEmpty()).toList(),
+                    p.getProperty(prefix + "default-reasoning-effort"),
+                    new TokenPricing(requiredDecimal(p, prefix + "pricing.input-per-million-usd"),
+                            requiredDecimal(p, prefix + "pricing.cached-input-per-million-usd"),
+                            requiredDecimal(p, prefix + "pricing.output-per-million-usd"))));
+        }
+        return List.copyOf(options);
     }
 
     private static AgentDefinition.ContextCompression compression(Properties properties) {

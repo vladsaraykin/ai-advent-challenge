@@ -7,7 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Single-JVM worker. A restart marks unfinished attempts failed; retry creates a new run. */
-public final class IndexingService implements AutoCloseable {
+public final class IndexingService implements AutoCloseable, ProjectDocumentIndexer {
     private static final Logger log = LoggerFactory.getLogger(IndexingService.class);
     private final DocumentService documents;
     private final DocumentChunker chunker;

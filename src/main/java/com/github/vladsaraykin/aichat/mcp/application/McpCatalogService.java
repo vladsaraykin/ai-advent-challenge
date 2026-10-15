@@ -11,6 +11,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -19,14 +20,31 @@ public class McpCatalogService {
     private static final Logger log = LoggerFactory.getLogger(McpCatalogService.class);
     private static final int MAX_TOOL_PAGES = 100;
     private final ObjectProvider<List<McpSyncClient>> clients;
+    private final boolean enabled;
 
-    public McpCatalogService(ObjectProvider<List<McpSyncClient>> clients) {
+    public McpCatalogService(ObjectProvider<List<McpSyncClient>> clients,
+            @Value("${spring.ai.mcp.client.enabled:true}") boolean enabled) {
         this.clients = clients;
+        this.enabled = enabled;
     }
 
     public List<McpServerView> servers() {
         var configuredClients = clients.getIfAvailable(List::of);
+        if (configuredClients.isEmpty()) {
+            log.warn("mcp_clients_unavailable enabled={}", enabled);
+            String error = enabled ? "MCP-клиенты не инициализированы; проверьте логи запуска и MCP-конфигурацию."
+                    : "MCP отключён конфигурацией. Установите MCP_ENABLED=true и перезапустите backend.";
+            return List.of(
+                    unavailable("filesystem", "Filesystem MCP Server", error),
+                    unavailable("project-git", "Project Git MCP", error),
+                    unavailable("excel", "Excel MCP", error));
+        }
+        log.info("mcp_clients_discovered count={}", configuredClients.size());
         return configuredClients.stream().map(this::describe).toList();
+    }
+
+    private static McpServerView unavailable(String id, String name, String error) {
+        return new McpServerView(id, name, null, null, false, error, List.of());
     }
 
     private McpServerView describe(McpSyncClient client) {
@@ -81,12 +99,16 @@ public class McpCatalogService {
     }
 
     public static String connectionId(McpSyncClient client) {
-        var info = client.getClientInfo();
-        var title = info == null ? null : info.title();
-        if (title != null && !title.isBlank()) {
-            return title.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "-");
-        }
-        return "mcp-server";
+        var info = client.getServerInfo();
+        var name = info == null ? null : info.name();
+        if (name == null || name.isBlank()) return "mcp-server";
+        var normalized = name.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "-");
+        // Client metadata is shared by all stdio connections; identify each connection
+        // from the MCP server metadata instead so selection and callback routing stay distinct.
+        if (normalized.contains("project-git") || normalized.contains("project_git")) return "project-git";
+        if (normalized.contains("filesystem")) return "filesystem";
+        if (normalized.contains("excel")) return "excel";
+        return normalized;
     }
 
     private static String firstNonBlank(String... values) {

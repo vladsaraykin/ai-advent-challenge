@@ -90,8 +90,9 @@ class McpToolServiceTest {
     private static McpSyncClient client(String id, String toolName) {
         var client = mock(McpSyncClient.class);
         var clientInfo = new McpSchema.Implementation("client", id, "1", null, List.of(), null);
-        var serverInfo = new McpSchema.Implementation("server", id, "1", null, List.of(), null);
+        var serverInfo = new McpSchema.Implementation(id, id, "1", null, List.of(), null);
         when(client.getClientInfo()).thenReturn(clientInfo);
+        when(client.getServerInfo()).thenReturn(serverInfo);
         when(client.getClientCapabilities()).thenReturn(McpSchema.ClientCapabilities.builder().build());
         when(client.getCurrentInitializationResult()).thenReturn(new McpSchema.InitializeResult("2025-11-25",
                 McpSchema.ServerCapabilities.builder().tools(false).build(), serverInfo, null, Map.of()));
