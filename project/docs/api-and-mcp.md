@@ -64,3 +64,10 @@ MCP client настраивается в `spring.ai.mcp.client` файла `appl
 на любом этапе задачи, но выполнение без точного одобрения запрещено. Сервер не
 принимает shell-команды/пути от модели, не меняет checkout и исключает чувствительные
 имена файлов.
+## AI-ревью PR (день 32)
+
+`POST /api/reviews` принимает фиксированный snapshot PR (UUID, repository, номер,
+base/head SHA, title, список файлов с patch и content). Использует управляемый RAG
+аутентифицированного профиля и возвращает проверенные findings, sources, metrics и Markdown.
+`GET /api/reviews/{id}` читает статус/результат только владельца. Подробный контракт,
+ограничения и GitHub Actions — [code-review.md](code-review.md).

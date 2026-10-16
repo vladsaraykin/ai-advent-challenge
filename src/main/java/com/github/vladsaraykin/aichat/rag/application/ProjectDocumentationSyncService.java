@@ -20,7 +20,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
-/** Synchronizes only README.md and project/docs Markdown into the configured owner's RAG. */
+/** Synchronizes allowlisted documentation and optionally source code into the owner's RAG. */
 @Service
 @ConditionalOnProperty(prefix = "app.rag", name = {"enabled", "project-docs.enabled"},
         havingValue = "true", matchIfMissing = true)
@@ -32,17 +32,26 @@ public class ProjectDocumentationSyncService {
     private final DocumentService documents;
     private final ProjectDocumentIndexer indexing;
     private final ProjectDocumentSyncRepository manifest;
+    private final boolean includeCode;
     private final AtomicBoolean running = new AtomicBoolean();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ProjectDocumentationSyncService(
             @org.springframework.beans.factory.annotation.Value("${app.rag.project-docs.root:.}") Path root,
             @org.springframework.beans.factory.annotation.Value("${app.rag.project-docs.owner:vlad}") String owner,
-            DocumentService documents, ProjectDocumentIndexer indexing, ProjectDocumentSyncRepository manifest) {
+            DocumentService documents, ProjectDocumentIndexer indexing, ProjectDocumentSyncRepository manifest,
+            @org.springframework.beans.factory.annotation.Value("${app.rag.project-docs.include-code:false}") boolean includeCode) {
         this.root = root.toAbsolutePath().normalize();
         this.owner = owner;
         this.documents = documents;
         this.indexing = indexing;
         this.manifest = manifest;
+        this.includeCode = includeCode;
+    }
+
+    public ProjectDocumentationSyncService(Path root, String owner, DocumentService documents,
+            ProjectDocumentIndexer indexing, ProjectDocumentSyncRepository manifest) {
+        this(root, owner, documents, indexing, manifest, false);
     }
 
     @Scheduled(initialDelayString = "${app.rag.project-docs.initial-delay-ms:10000}",
@@ -96,6 +105,8 @@ public class ProjectDocumentationSyncService {
         Set<String> current = files.keySet();
         for (var entry : manifest.list(owner)) {
             if (current.contains(entry.path())) continue;
+            // Turning code indexing off is not authorization to delete existing code documents.
+            if (!includeCode && !entry.path().equals("README.md") && !entry.path().startsWith("project/docs/")) continue;
             if (entry.pendingRun() != null) continue; // Do not remove a document while its indexing worker is active.
             for (var id : java.util.stream.Stream.of(entry.activeDocument(), entry.pendingDocument()).filter(java.util.Objects::nonNull).toList()) {
                 documents.deleteIfPresent(owner, id); // Keep the manifest if PostgreSQL deletion fails, so next sync retries.
@@ -137,6 +148,25 @@ public class ProjectDocumentationSyncService {
                             });
                 }
             }
+            if (includeCode) {
+                for (String directory : java.util.List.of("src/main/java", "src/test/java", "src/main/resources/db",
+                        "frontend/src", "mcp/project-git")) {
+                    Path sourceRoot = realRoot.resolve(directory);
+                    Path currentPath = realRoot;
+                    for (Path segment : realRoot.relativize(sourceRoot)) {
+                        currentPath = currentPath.resolve(segment);
+                        if (Files.isSymbolicLink(currentPath)) throw new IllegalStateException("Source directory symlink is not allowed");
+                    }
+                    if (!Files.isDirectory(sourceRoot, LinkOption.NOFOLLOW_LINKS)) continue;
+                    try (var walk = Files.walk(sourceRoot, 32)) {
+                        for (Path path : walk.toList()) {
+                            if (Files.isSymbolicLink(path)) throw new IllegalStateException("Source symlink is not allowed");
+                            if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                                    && path.toString().matches(".*\\.(java|js|jsx|mjs|css|sql)$") && Files.size(path) > 0) paths.add(path);
+                        }
+                    }
+                }
+            }
             var result = new java.util.TreeMap<String, SourceFile>();
             long bytesTotal = 0;
             for (Path path : paths) {
@@ -149,10 +179,15 @@ public class ProjectDocumentationSyncService {
                 }
                 String relative = realRoot.relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/");
                 byte[] content = Files.readAllBytes(path);
+                if (!relative.endsWith(".md")) {
+                    String code = new String(content, java.nio.charset.StandardCharsets.UTF_8);
+                    content = ("# Source: " + relative + "\n\nRepository snapshot; PR diff is authoritative for changes.\n\n"
+                            + code).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                }
                 result.put(relative, new SourceFile(relative, sha(content), content));
             }
             if (result.isEmpty()) throw new IllegalStateException("No allowlisted project documentation found");
-            return Map.copyOf(result);
+            return java.util.Collections.unmodifiableSortedMap(result);
         } catch (Exception error) {
             throw new IllegalStateException("Project documentation scan failed", error);
         }
@@ -161,7 +196,8 @@ public class ProjectDocumentationSyncService {
     private static String storageName(String path) {
         String prefix = "project__" + shortHash(path) + "__";
         String flattenedPath = path.replace("/", "__");
-        return prefix + flattenedPath.substring(0, Math.min(flattenedPath.length(), 255 - prefix.length()));
+        if (!flattenedPath.endsWith(".md")) flattenedPath += ".md";
+        return prefix + flattenedPath.substring(0, Math.min(flattenedPath.length() - 3, 252 - prefix.length())) + ".md";
     }
     private static String sha(byte[] bytes) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }

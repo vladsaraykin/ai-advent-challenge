@@ -22,6 +22,58 @@ import static org.mockito.Mockito.*;
 class ProjectDocumentationSyncServiceTest {
     @TempDir Path root;
 
+    @Test void disablingCodeIndexingDoesNotDeleteExistingManagedCode() throws Exception {
+        Files.writeString(root.resolve("README.md"), "# Project");
+        var documents = mock(DocumentService.class);
+        var indexing = mock(ProjectDocumentIndexer.class);
+        var manifest = mock(ProjectDocumentSyncRepository.class);
+        var codeId = UUID.randomUUID();
+        var readmeId = UUID.randomUUID();
+        when(manifest.list("vlad")).thenReturn(List.of(
+                new ProjectDocumentSyncRepository.Entry("README.md", "a".repeat(64), readmeId, null, null, null),
+                new ProjectDocumentSyncRepository.Entry("src/main/java/Example.java", "old-code", codeId, null, null, null)));
+        when(documents.upload(eq("vlad"), anyString(), any())).thenReturn(document());
+        when(indexing.start(eq("vlad"), any(), any())).thenReturn(run());
+        new ProjectDocumentationSyncService(root, "vlad", documents, indexing, manifest, false).synchronize();
+        verify(documents, never()).deleteIfPresent("vlad", codeId);
+        verify(manifest, never()).remove("vlad", "src/main/java/Example.java");
+    }
+
+    @Test void sourceDirectorySymlinkAbortsSyncWithoutDeletingManagedDocuments() throws Exception {
+        Files.writeString(root.resolve("README.md"), "# Project");
+        Files.createDirectories(root.resolve("elsewhere"));
+        Files.createSymbolicLink(root.resolve("src"), root.resolve("elsewhere"));
+        var documents = mock(DocumentService.class);
+        var manifest = mock(ProjectDocumentSyncRepository.class);
+        new ProjectDocumentationSyncService(root, "vlad", documents, mock(ProjectDocumentIndexer.class), manifest, true).synchronize();
+        verifyNoInteractions(documents, manifest);
+    }
+
+    @Test void includesOnlyAllowlistedCodeAsMarkdownAndPreservesOriginalPath() throws Exception {
+        Files.writeString(root.resolve("README.md"), "# Project");
+        Files.createDirectories(root.resolve("src/main/java/example"));
+        Files.writeString(root.resolve("src/main/java/example/Example.java"), "class Example {}");
+        Files.writeString(root.resolve("src/main/java/example/.env"), "SECRET=value");
+        Files.createDirectories(root.resolve("target"));
+        Files.writeString(root.resolve("target/Generated.java"), "ignored");
+        var documents = mock(DocumentService.class);
+        var indexing = mock(ProjectDocumentIndexer.class);
+        var manifest = mock(ProjectDocumentSyncRepository.class);
+        when(documents.upload(eq("vlad"), anyString(), any(InputStream.class))).thenAnswer(call -> {
+            String filename = call.getArgument(1);
+            if (filename.contains("Example.java")) {
+                org.assertj.core.api.Assertions.assertThat(filename).endsWith(".md");
+                org.assertj.core.api.Assertions.assertThat(new String(((InputStream) call.getArgument(2)).readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8)).contains("src/main/java/example/Example.java", "class Example {}");
+            }
+            return document();
+        });
+        when(indexing.start(eq("vlad"), any(), any())).thenAnswer(call -> run());
+        new ProjectDocumentationSyncService(root, "vlad", documents, indexing, manifest, true).synchronize();
+        verify(documents, times(2)).upload(eq("vlad"), anyString(), any());
+        verify(manifest).pending(eq("vlad"), eq("src/main/java/example/Example.java"), anyString(), any(), any());
+    }
+
     @Test void queuesOnlyAllowlistedMarkdownSources() throws Exception {
         Files.writeString(root.resolve("README.md"), "# Project");
         Files.createDirectories(root.resolve("project/docs"));

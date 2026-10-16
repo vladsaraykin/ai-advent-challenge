@@ -1,0 +1,36 @@
+name: AI code review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # This challenge reviews the owner's own PRs. Never run PR code or a fork's workflow with secrets.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == github.repository_owner
+    runs-on: ${{ vars.AI_REVIEW_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Read trusted automation from the base commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Review diff with project RAG and publish a comment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AI_REVIEW_API_URL: ${{ secrets.AI_REVIEW_API_URL }}
+          AI_REVIEW_USERNAME: ${{ secrets.AI_REVIEW_USERNAME }}
+          AI_REVIEW_PASSWORD: ${{ secrets.AI_REVIEW_PASSWORD }}
+        run: node automation/review-pr.mjs

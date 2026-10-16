@@ -17,6 +17,18 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class OpenAiConversationModelTest {
+    @Test void codeReviewUsesJsonModeWithoutMcpCallbacks() {
+        var provider = mock(ChatModel.class);
+        when(provider.stream(any(Prompt.class))).thenReturn(Flux.error(new IllegalStateException("raw secret body")));
+        assertThatThrownBy(() -> new OpenAiConversationModel(provider, CHARACTER_COUNTER)
+                .reviewCode(definition, List.of()).collectList().block()).hasMessageNotContaining("secret");
+        var capture = org.mockito.ArgumentCaptor.forClass(Prompt.class);
+        verify(provider).stream(capture.capture());
+        var options = (OpenAiChatOptions) capture.getValue().getOptions();
+        assertThat(options.getResponseFormat().getType())
+                .isEqualTo(org.springframework.ai.openai.OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT);
+        assertThat(options.getToolCallbacks()).isNullOrEmpty();
+    }
     @Test void springAiToolManagerPropagatesApprovalInsteadOfReturningItToTheModel() {
         var approval = new com.github.vladsaraykin.aichat.mcp.application.McpApprovalService.Required(
                 new com.github.vladsaraykin.aichat.mcp.application.McpApprovalService.Call(

@@ -78,10 +78,24 @@ ID соединений для UI/tool routing берётся из имени MC
 | Ключ | Env / default | Назначение |
 |---|---|---|
 | `app.rag.project-docs.enabled` | `RAG_PROJECT_DOCS_ENABLED`, `true` | Включает синхронизацию проектной документации. Также требуется `app.rag.enabled=true`. |
-| `app.rag.project-docs.root` | `RAG_PROJECT_DOCS_ROOT`, `.` | Checkout root, где синхронизатор ищет только `README.md` и `project/docs/**/*.md`. Для IDEA задайте абсолютный путь репозитория, чтобы не зависеть от working directory. |
+| `app.rag.project-docs.include-code` | `RAG_PROJECT_CODE_ENABLED`, `true` | Добавляет allowlist Java/React/SQL/project-git исходников в проектный RAG для ревью. Синхронизатор заменяет изменённые и удаляет исчезнувшие управляемые файлы. Выключение флага само по себе не удаляет уже загруженный код. |
+| `app.rag.project-docs.root` | `RAG_PROJECT_DOCS_ROOT`, `.` | Checkout root для README, project/docs и разрешённых исходников. Для IDEA задайте абсолютный путь репозитория. |
 | `app.rag.project-docs.owner` | `RAG_PROJECT_DOCS_OWNER`, `vlad` | Профиль-владелец управляемых документов в RAG. Этот профиль должен существовать в PostgreSQL. |
 | `app.rag.project-docs.initial-delay-ms` | `RAG_PROJECT_DOCS_INITIAL_DELAY_MS`, `10000` | Начальная задержка scheduler после регистрации. Первый проход уже запускается сразу после `ApplicationReadyEvent`; этот delay управляет последующим scheduled проходом, а не первым стартовым sync. |
 | `app.rag.project-docs.interval-ms` | `RAG_PROJECT_DOCS_INTERVAL_MS`, `60000` | Fixed delay между плановыми проходами синхронизации. |
+
+### AI-ревью PR
+
+| Ключ | Env / default | Назначение |
+|---|---|---|
+| `app.review.enabled` | `AI_REVIEW_ENABLED`, `true` | Включает аутентифицированные POST/GET `/api/reviews`; требует `RAG_ENABLED=true`. |
+| `app.review.repository` | `AI_REVIEW_REPOSITORY`, `vladsaraykin/ai-advent-challenge` | Единственный разрешённый репозиторий PR. Не URL и не путь checkout, формат owner/repository. |
+| `app.review.agent-location` | `AI_REVIEW_AGENT_LOCATION`, `classpath:review-agents/*.yaml` | YAML отдельного pipeline-агента `code-reviewer`; наследует agent-defaults.yaml, не влияет на список агентов обычного чата. |
+
+Prompt и лимиты ревью — `review-agents/code-reviewer.yaml`, модель/reasoning/цены — общие
+server-owned defaults. GitHub Actions secrets `AI_REVIEW_API_URL`, `AI_REVIEW_USERNAME`,
+`AI_REVIEW_PASSWORD` и variable `AI_REVIEW_RUNNER` описаны в [code-review.md](code-review.md);
+это настройки workflow, не параметры application.yml. OpenAI-ключ остаётся на backend.
 
 ### Включение RAG и параметры индекса
 

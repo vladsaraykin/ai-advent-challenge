@@ -10,7 +10,7 @@ RAG должен отражать актуальные `README.md` и `project/d
 ## Реализация
 
 Backend запускает синхронизацию сразу после `ApplicationReadyEvent`, а затем
-периодически сканирует только `README.md` и `project/docs/**/*.md`. Настройки: `RAG_PROJECT_DOCS_ENABLED`,
+периодически сканирует `README.md` и `project/docs/**/*.md`. Настройки: `RAG_PROJECT_DOCS_ENABLED`,
 `RAG_PROJECT_DOCS_ROOT`, `RAG_PROJECT_DOCS_OWNER`, `RAG_PROJECT_DOCS_INITIAL_DELAY_MS`,
 `RAG_PROJECT_DOCS_INTERVAL_MS`. По умолчанию синхронизация включена, корень — текущая
 рабочая директория, владелец — `vlad`, периодический интервал — 60000 мс; начальная
@@ -36,6 +36,15 @@ Backend запускает синхронизацию сразу после `App
 
 1. `README.md`
 2. `project/docs/**/*.md`
+3. При `RAG_PROJECT_CODE_ENABLED=true` (default с дня 32): `src/main/java`, `src/test/java`,
+   `src/main/resources/db`, `frontend/src`, `mcp/project-git`; расширения `.java`, `.js`,
+   `.jsx`, `.mjs`, `.css`, `.sql`. Каждый исходник загружается как Markdown с исходным
+   относительным путём в заголовке. `.env`, произвольные конфиги и build output не входят
+   в allowlist. Отключение флага кода не удаляет ранее проиндексированные исходники.
+
+Индекс используется также [автоматическим ревью PR](code-review.md). Это снимок checkout
+backend: он не обязан совпадать с base SHA каждого PR. Код PR получает ревьюер отдельно
+через GitHub API; его diff считается истиной о новых изменениях.
 
 Не следовать symlink за пределы корня checkout; ограничить общий размер и допустимые
 расширения; исключить `.env`, секреты, `.git`, `target`, `node_modules`, бинарные

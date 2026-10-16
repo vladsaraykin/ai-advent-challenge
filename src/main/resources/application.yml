@@ -44,11 +44,16 @@ spring:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
 
 app:
+  review:
+    enabled: ${AI_REVIEW_ENABLED:true}
+    repository: ${AI_REVIEW_REPOSITORY:vladsaraykin/ai-advent-challenge}
+    agent-location: ${AI_REVIEW_AGENT_LOCATION:classpath:review-agents/*.yaml}
   streaming:
     timeout-seconds: ${CHAT_STREAM_TIMEOUT_SECONDS:900}
   rag:
     project-docs:
       enabled: ${RAG_PROJECT_DOCS_ENABLED:true}
+      include-code: ${RAG_PROJECT_CODE_ENABLED:true}
       root: ${RAG_PROJECT_DOCS_ROOT:.}
       owner: ${RAG_PROJECT_DOCS_OWNER:vlad}
       initial-delay-ms: ${RAG_PROJECT_DOCS_INITIAL_DELAY_MS:10000}
