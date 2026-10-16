@@ -37,6 +37,16 @@ public class ChatService {
     public List<AgentDefinition> agents() { return registry.definitions(); }
     public List<Chat> list(String agentId) { return list(ChatRepository.LEGACY_OWNER, agentId); }
     public List<Chat> list(String ownerId, String agentId) { registry.get(agentId); return repository.list(ownerId, agentId); }
+    public List<ChatListItem> searchTitles(String ownerId, String agentId, String query, int limit) {
+        registry.get(agentId);
+        if (query == null || query.length() > 100 || limit < 1 || limit > 50)
+            throw new ChatFailure(ChatFailure.Kind.INVALID, "Поиск: до 100 символов, от 1 до 50 результатов.");
+        String normalized = query.strip().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) return List.of();
+        return repository.list(ownerId, agentId).stream()
+                .filter(chat -> chat.title().toLowerCase(Locale.ROOT).contains(normalized))
+                .limit(limit).map(ChatListItem::from).toList();
+    }
     public Chat get(String agentId, UUID chatId) { return get(ChatRepository.LEGACY_OWNER, agentId, chatId); }
     public Chat get(String ownerId, String agentId, UUID chatId) { registry.get(agentId); return repository.get(ownerId, agentId, chatId); }
     private void requireLayers(String agentId) {

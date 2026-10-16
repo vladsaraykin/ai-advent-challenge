@@ -110,6 +110,7 @@ export const agentApi = {
     + `/proposals/${encodeURIComponent(id)}/reject`, 'POST', { version }),
   agents: () => request(''),
   chats: agentId => request(`/${encodeURIComponent(agentId)}/chats`),
+  searchChats: (agentId, query, signal) => request(`/${encodeURIComponent(agentId)}/chats/search?${new URLSearchParams({ query, limit: '50' })}`, { signal }),
   create: (agentId, strategy = 'SUMMARY') => request(`/${encodeURIComponent(agentId)}/chats`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy })
   }),

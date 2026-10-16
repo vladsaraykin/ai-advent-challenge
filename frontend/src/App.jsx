@@ -388,7 +388,8 @@ export default function App({ api = agentApi }) {
       <UserProfile profile={profile} api={api} disabled={pending || memoryBusy} onProfile={setProfile} onLogout={logout} />
     </header>
     <div className={`harness-body view-${activeView}`}>
-    {activeView === 'chat' && <ChatSidebar unified agents={agents} agentId={agentId} chats={chats} chatId={chat?.id}
+    {activeView === 'chat' && <ChatSidebar key={`${profile.username}/${agentId}`} unified agents={agents} agentId={agentId} chats={chats} chatId={chat?.id}
+      searchChats={api.searchChats}
       activeView={activeView} onView={setActiveView}
       disabled={pending || loading || !!deleteTarget || deleting || memoryBusy} onAgent={setAgentId} onChat={openChat}
       onCreate={createChat} onDelete={(target, trigger) => { deleteTrigger.current = trigger; setDeleteTarget(target) }} />}

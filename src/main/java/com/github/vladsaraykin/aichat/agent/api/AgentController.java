@@ -64,6 +64,11 @@ public class AgentController {
     @GetMapping("/{agentId}/chats") public List<ChatSummary> chats(Principal principal, @PathVariable String agentId) {
         return service.list(owner(principal), agentId).stream().map(ChatSummary::from).toList();
     }
+    @GetMapping("/{agentId}/chats/search") public List<ChatListItem> searchChats(Principal principal,
+            @PathVariable String agentId, @RequestParam(defaultValue = "") String query,
+            @RequestParam(defaultValue = "50") int limit) {
+        return service.searchTitles(owner(principal), agentId, query, limit);
+    }
     @PostMapping("/{agentId}/chats") @ResponseStatus(HttpStatus.CREATED)
     public Chat create(Principal principal, @PathVariable String agentId, @Valid @RequestBody(required = false) CreateRequest request) {
         return request == null ? service.create(owner(principal), agentId) : service.create(owner(principal), agentId, request.strategy());
