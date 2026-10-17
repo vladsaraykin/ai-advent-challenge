@@ -91,6 +91,19 @@ class CodeReviewServiceTest {
         assertThatThrownBy(() -> service.review("vlad", foreign)).hasMessageContaining("не разрешён");
         verifyNoInteractions(context, model);
     }
+    @Test void distinguishesEmbeddingAndRerankerFailuresWithoutPublishingOrCallingOpenAi() throws Exception {
+        var service = service();
+        var request = request();
+        when(context.retrieve("vlad", request)).thenThrow(new com.github.vladsaraykin.aichat.rag.application.Reranker.Failure());
+        assertThatThrownBy(() -> service.review("vlad", request)).hasMessageContaining("review_reranker_failed");
+        verify(repository).fail("vlad", request.requestId(), "review_reranker_failed");
+        var next = request();
+        when(context.retrieve("vlad", next)).thenThrow(new com.github.vladsaraykin.aichat.rag.application.EmbeddingModel.Failure("OLLAMA_UNAVAILABLE"));
+        assertThatThrownBy(() -> service.review("vlad", next)).hasMessageContaining("review_embedding_failed");
+        verify(repository).fail("vlad", next.requestId(), "review_embedding_failed");
+        verifyNoInteractions(model);
+        verify(repository, never()).complete(anyString(), any());
+    }
     @Test void anActiveReviewRejectsConcurrentRequestsAndReleasesItsSlotAfterFailure() throws Exception {
         var service = service(); var first = request();
         when(context.retrieve("vlad", first)).thenAnswer(call -> {

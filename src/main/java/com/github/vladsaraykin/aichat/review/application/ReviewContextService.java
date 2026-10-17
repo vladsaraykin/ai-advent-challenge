@@ -8,6 +8,8 @@ import java.util.List;
 
 /** Uses only the authenticated owner's managed project corpus, never unrelated uploaded documents. */
 public class ReviewContextService {
+    // deploy/reranker/server.py validates query length before tokenization (max_length=4000).
+    private static final int MAX_RETRIEVAL_QUERY_CHARACTERS = 4000;
     private final ProjectDocumentSyncRepository manifest;
     private final RagQuestionRepository repository;
     private final EmbeddingModel embeddings;
@@ -28,7 +30,7 @@ public class ReviewContextService {
         String query = "Code review: architecture, security, persistence, API contracts. " + request.title() + "\n"
                 + request.files().stream().map(f -> f.path() + "\n" + f.patch().substring(0, Math.min(1000, f.patch().length())))
                     .collect(java.util.stream.Collectors.joining("\n"));
-        query = query.substring(0, Math.min(6000, query.length()));
+        query = query.substring(0, Math.min(MAX_RETRIEVAL_QUERY_CHARACTERS, query.length()));
         var vector = embeddings.embed(query).vector();
         var candidates = repository.searchDocuments(owner, properties.ollama().model(), vector, ranking.candidateK(), ids);
         if (candidates.isEmpty()) throw new IllegalStateException("project_index_empty");

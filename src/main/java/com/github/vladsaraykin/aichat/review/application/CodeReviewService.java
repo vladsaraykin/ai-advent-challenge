@@ -3,6 +3,8 @@ package com.github.vladsaraykin.aichat.review.application;
 import com.github.vladsaraykin.aichat.agent.application.*;
 import com.github.vladsaraykin.aichat.agent.domain.*;
 import com.github.vladsaraykin.aichat.review.domain.*;
+import com.github.vladsaraykin.aichat.rag.application.EmbeddingModel;
+import com.github.vladsaraykin.aichat.rag.application.Reranker;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.*;
@@ -64,11 +66,14 @@ public class CodeReviewService {
             return result;
         } catch (RuntimeException error) {
             if (!began) throw error;
-            String code = error instanceof IllegalStateException && Set.of("project_index_empty", "project_context_empty", "review_context_limit",
-                    "review_incomplete", "review_validation_failed").contains(Objects.toString(error.getMessage(), "")) ? error.getMessage() : "review_dependency_failed";
+            String code = error instanceof Reranker.Failure ? "review_reranker_failed"
+                    : error instanceof EmbeddingModel.Failure ? "review_embedding_failed"
+                    : error instanceof IllegalStateException && Set.of("project_index_empty", "project_context_empty", "review_context_limit",
+                            "review_incomplete", "review_validation_failed").contains(Objects.toString(error.getMessage(), ""))
+                            ? error.getMessage() : "review_dependency_failed";
             try { repository.fail(owner, request.requestId(), code); }
             catch (RuntimeException storageError) { log.warn("code_review_failure_save_failed requestId={}", request.requestId()); }
-            log.warn("code_review_failed requestId={} code={} errorType={}", request.requestId(), code, error.getClass().getSimpleName());
+            log.warn("code_review_failed requestId={} code={} errorType={}", request.requestId(), code, error.getClass().getName());
             throw new ChatFailure(ChatFailure.Kind.PROVIDER, "Ревью не опубликовано: " + code + ". Проверьте RAG и модель; повтор запуска создаст новую попытку.");
         } finally { slot.release(); }
     }

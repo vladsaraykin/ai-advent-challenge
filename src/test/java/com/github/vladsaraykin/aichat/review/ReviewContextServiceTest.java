@@ -29,6 +29,20 @@ class ReviewContextServiceTest {
                 new RerankerSettings(URI.create("http://localhost:8000"), 10, 20, 5, .2), new RagSourceSelector(String::length, 6000));
         assertThat(service.retrieve("vlad", CodeReviewServiceTest.request())).containsExactly(CodeReviewServiceTest.SOURCE);
         verify(repository, never()).searchAll(anyString(), anyString(), any(), anyInt());
+        // Several patches previously produced a 6000-character query, rejected by reranker with HTTP 422.
+        var original = CodeReviewServiceTest.request();
+        var manyFiles = new ArrayList<com.github.vladsaraykin.aichat.review.domain.ReviewRequest.ChangedFile>();
+        for (int i = 0; i < 10; i++) manyFiles.add(new com.github.vladsaraykin.aichat.review.domain.ReviewRequest.ChangedFile(
+                "src/Long" + i + ".java", "modified", "@@ -1 +1 @@\n-old\n+" + "x".repeat(1000), "context"));
+        var large = new com.github.vladsaraykin.aichat.review.domain.ReviewRequest(UUID.randomUUID(), original.repository(),
+                original.pullNumber(), original.baseSha(), original.headSha(), original.title(), manyFiles);
+        clearInvocations(embeddings, reranker);
+        assertThat(service.retrieve("vlad", large)).containsExactly(CodeReviewServiceTest.SOURCE);
+        var embeddingQuery = org.mockito.ArgumentCaptor.forClass(String.class);
+        var rankingQuery = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(embeddings).embed(embeddingQuery.capture());
+        verify(reranker).score(rankingQuery.capture(), anyList());
+        assertThat(rankingQuery.getValue()).hasSize(4000).isEqualTo(embeddingQuery.getValue());
         when(reranker.score(anyString(), anyList())).thenReturn(List.of(Double.NaN));
         assertThatThrownBy(() -> service.retrieve("vlad", CodeReviewServiceTest.request())).isInstanceOf(Reranker.Failure.class);
         assertThatThrownBy(() -> service.retrieve("other", CodeReviewServiceTest.request())).hasMessage("project_index_empty");
