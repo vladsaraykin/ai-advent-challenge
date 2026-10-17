@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectSnapshot, verifyPatch, publishReview, requestId } from './review-pr.mjs';
+import { collectSnapshot, verifyPatch, publishReview, requestId, fileContext } from './review-pr.mjs';
 
 const repository = 'vladsaraykin/ai-advent-challenge';
 const head = 'b'.repeat(40), base = 'a'.repeat(40);
@@ -24,7 +24,8 @@ test('retrieves PR diff and file at the exact head SHA without checking out PR c
   const { github, calls } = api();
   const snapshot = await collectSnapshot(github, repository, 1, head);
   assert.equal(snapshot.files[0].patch, file.patch);
-  assert.equal(snapshot.files[0].content, 'new');
+  assert.match(snapshot.files[0].content, /^FULL FILE; RIGHT;/);
+  assert.ok(snapshot.files[0].content.includes('L1: new'));
   assert.ok(calls.some(c => c.path.endsWith(`?ref=${head}`)));
   assert.equal(snapshot.baseSha, base);
 });
@@ -75,4 +76,54 @@ test('uses deterministic request IDs for retries, but a new attempt has its own 
   assert.equal(requestId(repository, '123', '1'), requestId(repository, '123', '1'));
   assert.notEqual(requestId(repository, '123', '1'), requestId(repository, '123', '2'));
   assert.match(requestId(repository, '123', '1'), /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-a[a-f0-9]{3}-[a-f0-9]{12}$/);
+});
+
+test('a small edit in a large file keeps the whole diff and only nearby line-numbered context', async () => {
+  const text = Array.from({ length: 20000 }, (_, i) => `source line ${i + 1}`).join('\n');
+  const patch = '@@ -19000 +19000 @@\n-old\n+new';
+  const { github } = api({ files: [{ ...file, patch }],
+    blob: { ...blob, size: Buffer.byteLength(text), content: Buffer.from(text).toString('base64') } });
+  const snapshot = await collectSnapshot(github, repository, 1, head);
+  assert.equal(snapshot.files[0].patch, patch);
+  assert.match(snapshot.files[0].content, /^PARTIAL FILE CONTEXT; RIGHT;/);
+  assert.ok(snapshot.files[0].content.includes('L19000: source line 19000'));
+  assert.ok(!snapshot.files[0].content.includes('L1: source line 1\n'));
+  assert.ok(snapshot.files[0].content.length <= 6000);
+});
+
+test('allocates context fairly across files and stays within the existing backend contract', async () => {
+  const text = 'a large source line\n'.repeat(10000);
+  const files = Array.from({ length: 40 }, (_, i) => ({ ...file, filename: `src/File${i}.java` }));
+  const { github } = api({ pr: { ...pr, changed_files: 40 }, files,
+    blob: { ...blob, size: Buffer.byteLength(text), content: Buffer.from(text).toString('base64') } });
+  const snapshot = await collectSnapshot(github, repository, 1, head);
+  assert.equal(snapshot.files.length, 40);
+  assert.ok(snapshot.files.every(f => f.patch === file.patch && f.content.includes('L1:')));
+  assert.ok(snapshot.files.reduce((sum, f) => sum + f.path.length + f.patch.length + f.content.length, 0) <= 120000);
+});
+
+test('rejects an oversized full diff before fetching file content, never truncates changes', async () => {
+  const huge = { ...file, patch: '@@ -1 +1 @@\n-old\n+' + 'x'.repeat(120000) };
+  const { github, calls } = api({ files: [huge] });
+  await assert.rejects(collectSnapshot(github, repository, 1, head), /Full diff and file paths exceed/);
+  assert.ok(!calls.some(c => c.path.includes('/contents/')));
+});
+
+test('labels clipped minified lines and handles LEFT ranges and zero context budget', () => {
+  const context = fileContext('x'.repeat(100000), '@@ -1 +1 @@\n-old\n+new', 'RIGHT', 1000);
+  assert.ok(context.length <= 1000);
+  assert.match(context, /PARTIAL FILE CONTEXT/);
+  assert.match(context, /line clipped/);
+  const lines = Array.from({ length: 1000 }, (_, i) => `line ${i + 1}`).join('\n');
+  const deleted = fileContext(lines, '@@ -900,1 +899,0 @@\n-line 900', 'LEFT', 1000);
+  assert.match(deleted, /LEFT/);
+  assert.match(deleted, /L900: line 900/);
+  assert.equal(fileContext(lines, file.patch, 'RIGHT', 0), '');
+});
+
+test('merges overlapping hunk ranges without duplicating context lines', () => {
+  const lines = Array.from({ length: 1000 }, (_, i) => `line ${i + 1}`).join('\n');
+  const patch = '@@ -10 +10 @@\n-old\n+new\n@@ -15 +15 @@\n-old\n+new';
+  const content = fileContext(lines, patch, 'RIGHT', 2000);
+  assert.equal(content.split('\n').filter(line => line.startsWith('L12:')).length, 1);
 });
