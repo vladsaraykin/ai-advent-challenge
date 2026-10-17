@@ -29,7 +29,7 @@ class ReviewContextServiceTest {
                 new RerankerSettings(URI.create("http://localhost:8000"), 10, 20, 5, .2), new RagSourceSelector(String::length, 6000));
         assertThat(service.retrieve("vlad", CodeReviewServiceTest.request())).containsExactly(CodeReviewServiceTest.SOURCE);
         verify(repository, never()).searchAll(anyString(), anyString(), any(), anyInt());
-        // Several patches previously produced a 6000-character query, rejected by reranker with HTTP 422.
+        // Raw diffs used to dominate a query whose first 96 tokens alone reached the cross-encoder.
         var original = CodeReviewServiceTest.request();
         var manyFiles = new ArrayList<com.github.vladsaraykin.aichat.review.domain.ReviewRequest.ChangedFile>();
         for (int i = 0; i < 10; i++) manyFiles.add(new com.github.vladsaraykin.aichat.review.domain.ReviewRequest.ChangedFile(
@@ -40,9 +40,25 @@ class ReviewContextServiceTest {
         assertThat(service.retrieve("vlad", large)).containsExactly(CodeReviewServiceTest.SOURCE);
         var embeddingQuery = org.mockito.ArgumentCaptor.forClass(String.class);
         var rankingQuery = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(embeddings).embed(embeddingQuery.capture());
-        verify(reranker).score(rankingQuery.capture(), anyList());
-        assertThat(rankingQuery.getValue()).hasSize(4000).isEqualTo(embeddingQuery.getValue());
+        verify(embeddings, times(3)).embed(embeddingQuery.capture());
+        verify(reranker, times(3)).score(rankingQuery.capture(), anyList());
+        assertThat(rankingQuery.getAllValues()).isEqualTo(embeddingQuery.getAllValues());
+        assertThat(rankingQuery.getAllValues()).allSatisfy(q -> assertThat(q).hasSizeLessThan(300).doesNotContain("xxx", "@@"));
+        assertThat(rankingQuery.getAllValues().getFirst()).contains("Long0, Long1, Long2, Long3");
+        assertThat(rankingQuery.getAllValues().get(1)).contains("Long4, Long5, Long6, Long7").doesNotContain("Long8");
+        assertThat(rankingQuery.getAllValues().getLast()).contains(original.title());
+        // The same chunk from several searches is included only once, with its best valid score.
+        when(reranker.score(anyString(), anyList())).thenReturn(List.of(.01), List.of(.9), List.of(.1));
+        assertThat(service.retrieve("vlad", large)).containsExactly(CodeReviewServiceTest.SOURCE);
+        when(reranker.score(anyString(), anyList())).thenReturn(List.of(.01));
+        assertThatThrownBy(() -> service.retrieve("vlad", large)).hasMessage("project_context_empty");
+        when(reranker.score(anyString(), anyList())).thenReturn(List.of(.9));
+        var tinyBudget = new ReviewContextService(manifest, repository, embeddings, props, reranker,
+                new RerankerSettings(URI.create("http://localhost:8000"), 10, 20, 5, .2), new RagSourceSelector(String::length, 1));
+        assertThatThrownBy(() -> tinyBudget.retrieve("vlad", large)).hasMessage("project_context_empty");
+        // A failure in a later component/topic query must not fall back to earlier accepted evidence.
+        when(reranker.score(anyString(), anyList())).thenReturn(List.of(.9), List.of(Double.NaN));
+        assertThatThrownBy(() -> service.retrieve("vlad", large)).isInstanceOf(Reranker.Failure.class);
         when(reranker.score(anyString(), anyList())).thenReturn(List.of(Double.NaN));
         assertThatThrownBy(() -> service.retrieve("vlad", CodeReviewServiceTest.request())).isInstanceOf(Reranker.Failure.class);
         assertThatThrownBy(() -> service.retrieve("other", CodeReviewServiceTest.request())).hasMessage("project_index_empty");
