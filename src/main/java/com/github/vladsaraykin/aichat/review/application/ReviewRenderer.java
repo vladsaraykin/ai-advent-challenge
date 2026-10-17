@@ -11,6 +11,10 @@ public final class ReviewRenderer {
         var out = new StringBuilder("<!-- ai-code-review -->\n## AI-ревью PR #").append(request.pullNumber())
                 .append("\n\nКоммит: `").append(request.headSha()).append("`. Проверено файлов: ").append(request.files().size())
                 .append(". Контекст RAG: ").append(sources.size()).append(" фрагментов.\n");
+        long partial = request.files().stream().filter(f -> f.content().startsWith("PARTIAL FILE CONTEXT;")).count();
+        long omitted = request.files().stream().filter(f -> !f.patch().isBlank() && f.content().isBlank()).count();
+        out.append("\nDiff передан полностью. Дополнительный контекст файлов: фрагменты у ").append(partial)
+                .append(", отсутствует у ").append(omitted).append(".\n");
         String[][] groups = {{"BUG", "Потенциальные баги"}, {"ARCHITECTURE", "Архитектурные проблемы"},
                 {"RECOMMENDATION", "Рекомендации"}};
         for (var group : groups) {

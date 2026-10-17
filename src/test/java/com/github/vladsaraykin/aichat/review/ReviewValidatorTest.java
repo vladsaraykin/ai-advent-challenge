@@ -7,6 +7,16 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 class ReviewValidatorTest {
+    @Test void acceptsLabelledPartialContextAndReportsItsCoverageWithoutRequiringWholeFiles() {
+        var original = CodeReviewServiceTest.request();
+        var file = original.files().getFirst();
+        var request = new ReviewRequest(original.requestId(), original.repository(), original.pullNumber(), original.baseSha(),
+                original.headSha(), original.title(), List.of(new ReviewRequest.ChangedFile(file.path(), file.status(), file.patch(),
+                "PARTIAL FILE CONTEXT; RIGHT; 10000 total lines. Unlisted lines are omitted.\nL2:   savePartial();")));
+        assertThat(validator.validate(CodeReviewServiceTest.FINDING, request, List.of(CodeReviewServiceTest.SOURCE))).hasSize(1);
+        assertThat(new ReviewRenderer().render(request, List.of(), List.of(CodeReviewServiceTest.SOURCE), null))
+                .contains("Diff передан полностью", "фрагменты у 1", "отсутствует у 0");
+    }
     private final ReviewValidator validator = new ReviewValidator();
     @Test void acceptsOnlyExactChangedLinesAndSourceQuotes() {
         assertThat(validator.validate(CodeReviewServiceTest.FINDING, CodeReviewServiceTest.request(), List.of(CodeReviewServiceTest.SOURCE))).hasSize(1);

@@ -5,6 +5,42 @@ import { pathToFileURL } from 'node:url';
 const MARKER = '<!-- ai-code-review -->';
 const MAX_CHARACTERS = 120000;
 const MAX_FILES = 40;
+const MAX_FILE_BYTES = 1024 * 1024;
+const MAX_FILE_CONTEXT = 6000;
+
+/** The complete patch has its own reserved budget. File content is supplementary, explicitly partial data. */
+export function fileContext(text, patch, side, budget) {
+  if (!text || budget < 160) return '';
+  const lines = text.split('\n');
+  const full = `FULL FILE; ${side}; lines 1-${lines.length}\n` + lines.map((line, i) => `L${i + 1}: ${line}`).join('\n');
+  if (full.length <= budget) return full;
+  const header = `PARTIAL FILE CONTEXT; ${side}; ${lines.length} total lines. Unlisted lines are omitted; long lines may be clipped. Full diff is authoritative.\n`;
+  if (header.length > budget) return '';
+  const ranges = [];
+  const regex = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm;
+  for (const match of patch.matchAll(regex)) {
+    const start = Number(match[side === 'LEFT' ? 1 : 3]);
+    const count = Number(match[side === 'LEFT' ? 2 : 4] ?? 1);
+    const first = Math.max(1, start - 5), last = Math.min(lines.length, start + Math.max(count, 1) - 1 + 5);
+    const previous = ranges.at(-1);
+    if (previous && first <= previous[1] + 1) previous[1] = Math.max(previous[1], last);
+    else ranges.push([first, last]);
+  }
+  let result = header;
+  for (const [first, last] of ranges) {
+    for (let line = first; line <= last; line++) {
+      const value = `L${line}: ${lines[line - 1]}\n`;
+      const remaining = budget - result.length;
+      if (value.length <= remaining) result += value;
+      else {
+        const marker = ' … [line clipped; context budget reached]\n';
+        if (remaining > marker.length + 16) result += value.slice(0, remaining - marker.length) + marker;
+        return result;
+      }
+    }
+  }
+  return result;
+}
 
 export function requestId(repository, runId, attempt) {
   const hex = createHash('sha256').update(`${repository}:${runId}:${attempt}`).digest('hex');
@@ -34,15 +70,22 @@ export async function collectSnapshot(github, repository, number, expectedHead) 
   if (!/^[a-f0-9]{40}$/.test(baseSha ?? '')) throw new Error('Cannot determine the PR merge base.');
   const files = await github(`${prefix}/pulls/${number}/files?per_page=100`);
   if (files.length !== pr.changed_files) throw new Error('Incomplete PR file list.');
-  const snapshot = [];
-  let characters = 0;
+  let mandatoryCharacters = 0;
   for (const file of files) {
     verifyPatch(file);
+    mandatoryCharacters += file.filename.length + (file.patch?.length ?? 0);
+  }
+  if (mandatoryCharacters > MAX_CHARACTERS) {
+    throw new Error(`Full diff and file paths exceed ${MAX_CHARACTERS} characters (${mandatoryCharacters}); split this PR.`);
+  }
+  const snapshot = [];
+  let remainingContext = MAX_CHARACTERS - mandatoryCharacters;
+  for (const file of files) {
     const ref = file.status === 'removed' ? baseSha : pr.head.sha;
     const encodedPath = file.filename.split('/').map(encodeURIComponent).join('/');
     const blob = await github(`${prefix}/contents/${encodedPath}?ref=${ref}`);
-    if (blob.type !== 'file' || blob.encoding !== 'base64' || blob.size > MAX_CHARACTERS) {
-      throw new Error('A changed file is unsupported or too large; split this PR.');
+    if (blob.type !== 'file' || blob.encoding !== 'base64' || blob.size > MAX_FILE_BYTES) {
+      throw new Error('A changed file is unsupported or exceeds the 1 MiB context-read limit; split this PR.');
     }
     const bytes = Buffer.from(blob.content, 'base64');
     const binary = bytes.includes(0);
@@ -52,9 +95,10 @@ export async function collectSnapshot(github, repository, number, expectedHead) 
       catch { throw new Error('Changed text file is not UTF-8.'); }
     }
     if (!file.patch && !binary && file.changes > 0) throw new Error('Text diff is missing; review would be incomplete.');
-    const item = { path: file.filename, status: file.status, patch: file.patch ?? '', content };
-    characters += item.path.length + item.patch.length + item.content.length;
-    if (characters > MAX_CHARACTERS) throw new Error('Diff and files exceed 120000 characters; split this PR.');
+    const budget = Math.min(MAX_FILE_CONTEXT, Math.floor(remainingContext / (files.length - snapshot.length)));
+    const context = fileContext(content, file.patch ?? '', file.status === 'removed' ? 'LEFT' : 'RIGHT', budget);
+    remainingContext -= context.length;
+    const item = { path: file.filename, status: file.status, patch: file.patch ?? '', content: context };
     snapshot.push(item);
   }
   const current = await github(`${prefix}/pulls/${number}`);
