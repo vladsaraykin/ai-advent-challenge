@@ -82,6 +82,10 @@ public record AgentDefinition(String id, String name, String description, String
         return new AgentDefinition(id, name, description, model, prompt, limit, reasoningEffort,
                 timeoutSeconds, maxHistoryChars, pricing, compression, contextManagement, memoryLayers, invariants, lifecycle, modelOptions);
     }
+    public AgentDefinition withLifecycle(LifecycleSettings settings) {
+        return new AgentDefinition(id,name,description,model,systemPrompt,maxCompletionTokens,reasoningEffort,
+                timeoutSeconds,maxHistoryChars,pricing,compression,contextManagement,memoryLayers,invariants,settings,modelOptions);
+    }
 
     public AgentDefinition withModel(String selectedModel, String selectedEffort) {
         if (modelOptions.isEmpty()) throw new IllegalArgumentException("Model selection is not configured for this agent");
@@ -106,7 +110,10 @@ public record AgentDefinition(String id, String name, String description, String
         }
     }
 
-    public record LifecycleSettings(boolean enabled, int maxCompletionTokens, String guardPrompt) {
+    public record LifecycleSettings(boolean enabled, int maxCompletionTokens, String guardPrompt, boolean advisory) {
+        public LifecycleSettings(boolean enabled, int maxCompletionTokens, String guardPrompt) {
+            this(enabled, maxCompletionTokens, guardPrompt, false);
+        }
         public LifecycleSettings {
             if (maxCompletionTokens < 64 || maxCompletionTokens > 4096 || guardPrompt == null || guardPrompt.isBlank()) {
                 throw new IllegalArgumentException("Invalid lifecycle settings");

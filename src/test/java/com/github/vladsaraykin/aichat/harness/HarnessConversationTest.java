@@ -14,6 +14,28 @@ import reactor.core.publisher.Flux;
 import static org.assertj.core.api.Assertions.*;
 
 class HarnessConversationTest {
+    @Test void filesModeAddsLiveWorkspaceProtocolWithoutRagJsonContract() throws Exception {
+        var prompt=new java.util.concurrent.atomic.AtomicReference<String>();
+        ConversationModel model=new ConversationModel() {
+            public Reply reply(AgentDefinition definition,List<ChatMessage> messages) { return HarnessConversationTest.reply("План"); }
+            public Flux<StreamPart> stream(AgentDefinition definition,ContextSummary summary,List<ChatMessage> messages,
+                    List<String> servers,RequestContext request) {
+                prompt.set(definition.systemPrompt());
+                return Flux.just(StreamPart.completed(HarnessConversationTest.reply("Согласуйте план поиска API.")));
+            }
+        };
+        var definition=new AgentRegistry(model,"classpath:agents/*.yaml").get("assistant").definition();
+        var user=new ChatMessage(UUID.randomUUID(),ChatMessage.Role.USER,"Приступай",java.time.Instant.now(),null);
+        var context=new RequestContext("test","assistant",UUID.randomUUID(),user.id(),user.content(),
+                new ChatSettings(0,false,List.of("project-files"),null),null,null,null,false,null,false,true);
+        var parts=new ConfiguredAgent(definition,model).withRequestContext(context)
+                .answerStream(null,List.of(),user).collectList().block();
+        assertThat(prompt.get()).contains("Режим /files", "project_preview_document", "expectedSha256", "Planning/Done",
+                        "Если цель ясна", "Каждый вызов требует разрешения UI")
+                .doesNotContain("Вначале согласуй цель и план", "выполняй инструменты только на Execution/Validation")
+                .doesNotContain(com.github.vladsaraykin.aichat.rag.application.GroundedAnswerValidator.INSTRUCTION);
+        assertThat(parts.getLast().completed().content()).contains("Согласуйте план");
+    }
     @TempDir Path directory;
     private static final String QUOTE="Человек утверждает требования и контролирует переходы между этапами разработки.";
     private static final RagQuestion.Source SOURCE=new RagQuestion.Source(1,new DocumentChunk(UUID.randomUUID(),0,

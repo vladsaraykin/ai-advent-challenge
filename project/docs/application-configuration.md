@@ -44,7 +44,7 @@
 
 ## MCP
 
-Включены три STDIO-подключения: `filesystem`, `project-git`, `excel`. Необязательное
+Включены четыре STDIO-подключения: `filesystem`, `project-git`, `project-files`, `excel`. Необязательное
 старое HTTP-подключение `expenses` удалено. MCP-инструменты не прикрепляются автоматически:
 основной ответ получает только выбранные серверы, а фактический вызов проходит через
 проверку подтверждения параметров.
@@ -52,6 +52,8 @@
 | Ключ | Env / default | Назначение |
 |---|---|---|
 | `spring.ai.mcp.client.enabled` | `MCP_ENABLED`, `true` | Включает создание MCP-клиентов. Изменение требует перезапуска backend. |
+| `app.mcp.max-distinct-calls` | `MCP_MAX_DISTINCT_CALLS`, `256` | Бюджет различных server/tool/параметры на сохранённый запрос, 1–4096. Повторное получение кешированного результата бюджет не расходует. По исчерпании новые действия запрещены, модель должна завершить ответ с выполненными и незавершёнными пунктами. Увеличение повышает возможные расходы OpenAI. |
+| `app.mcp.max-callback-attempts` | `MCP_MAX_CALLBACK_ATTEMPTS`, `1024` | Жёсткая защита от циклов на одну генерацию; включает повторы, кеш и отказы. От max-distinct-calls до 16384. При превышении запрос завершается ошибкой, успешные действия остаются в БД. После изменения любого бюджета перезапустите backend. |
 | `spring.ai.mcp.client.initialized` | `true` | Инициализирует MCP handshake при создании клиентов. Если сервер не отвечает при старте, автонастройка Spring AI может прервать запуск приложения. |
 | `spring.ai.mcp.client.name` | `ai-advent-mcp-client` | Клиентское имя в MCP handshake; не ID соединения в UI. |
 | `spring.ai.mcp.client.version` | `1.0.0` | Версия клиента, передаваемая MCP-серверам. |
@@ -64,6 +66,9 @@
 | `spring.ai.mcp.client.stdio.connections.project-git.command` | `MCP_PROJECT_GIT_COMMAND`, `node` | Команда запуска встроенного read-only MCP-сервера проекта. |
 | `...project-git.args[0]` | `MCP_PROJECT_GIT_ENTRYPOINT`, `mcp/project-git/server.mjs` | Entry point встроенного MCP для текущей ветки и списка отслеживаемых файлов. |
 | `...project-git.args[1]` | `MCP_PROJECT_GIT_ROOT`, `.` | Путь к checkout, в котором MCP выполняет только разрешённые read-only git-команды. |
+| `spring.ai.mcp.client.stdio.connections.project-files.command` | `MCP_PROJECT_FILES_COMMAND`, `node` | Запускает ограниченный MCP для поиска/анализа файлов и изменения документации. |
+| `...project-files.args[0]` | `MCP_PROJECT_FILES_ENTRYPOINT`, `mcp/project-files/server.mjs` | Entry point файлового MCP. Требует установленных `mcp/node_modules`. Для JAR можно задать абсолютный путь. |
+| `...project-files.args[1]` | `MCP_PROJECT_FILES_ROOT`, `.` | Корень Git checkout. Запись разрешена только в README.md и project/docs/**/*.md. Для RAG-синхронизации должен совпадать с RAG_PROJECT_DOCS_ROOT. |
 | `spring.ai.mcp.client.stdio.connections.excel.command` | `MCP_EXCEL_COMMAND`, `uv` | Команда запуска существующего Excel MCP. |
 | `...excel.args[0..1]` | `--directory`, затем `MCP_EXCEL_DIRECTORY` (default `../excel-mcp`) | Рабочий каталог проекта Excel MCP для `uv`. |
 | `...excel.args[2..5]` | `run --frozen --no-sync excel-mcp` | Фиксированные аргументы запуска; не загружают/не обновляют зависимости при старте. |
@@ -133,6 +138,16 @@ server-owned defaults. GitHub Actions secrets `AI_REVIEW_API_URL`, `AI_REVIEW_US
 | `app.rag.ollama.request-timeout` | `120s` (fixed) | Timeout HTTP-запроса генерации embedding. |
 
 ## Сохранение файлов и агенты
+
+В общем agent-defaults.yaml установлено lifecycle.mode: advisory; отдельный YAML
+агента может переопределить mode на strict. Допустимы только advisory/strict,
+неверное значение останавливает запуск. В advisory память и отметки этапов не
+блокируют генерацию/MCP, поля памяти заполнять необязательно, вопросы обсуждаются
+в чате. В strict действуют проверки требований/решений/вопросов и LLM lifecycle guard.
+lifecycle.enabled включает guard только в strict; отключение guard не снимает
+паузу, права владельца, инварианты или разрешения инструментов. Поле API
+advisoryWorkflow сообщает UI текущий режим. Перезапустите backend после изменения YAML;
+существующая история и память не очищаются.
 
 | Ключ | Env / default | Назначение |
 |---|---|---|

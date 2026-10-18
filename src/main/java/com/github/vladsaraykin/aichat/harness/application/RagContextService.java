@@ -31,7 +31,7 @@ public class RagContextService {
         this.projectDocuments=projectDocuments;this.requests=requests;
     }
     public RequestContext prepare(RequestContext request,Chat chat,AgentDefinition definition) {
-        if(request.mcpOnly()) return request;
+        if(request.mcpOnly() || request.fileOperations()) return request;
         if(!request.projectHelp() && !request.settings().ragEnabled()) return request;
         if(repository.getIfAvailable()==null || reranker.getIfAvailable()==null)
             throw new ChatFailure(ChatFailure.Kind.INVALID,"RAG недоступен. Проверьте серверную конфигурацию.");
@@ -89,6 +89,6 @@ public class RagContextService {
     private static RequestContext withRetrieval(RequestContext request,List<RagQuestion.Source> sources,
             RagQuestion.Retrieval retrieval,ChatMessage.Metrics rewriteUsage) {
         return new RequestContext(request.owner(),request.agentId(),request.chatId(),request.messageId(),request.content(),
-                request.settings(),sources,retrieval,rewriteUsage,request.projectHelp(),request.question(),request.mcpOnly());
+                request.settings(),sources,retrieval,rewriteUsage,request.projectHelp(),request.question(),request.mcpOnly(),request.projectFiles());
     }
 }

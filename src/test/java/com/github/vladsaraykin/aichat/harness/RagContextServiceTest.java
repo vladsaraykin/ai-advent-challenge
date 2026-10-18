@@ -18,6 +18,24 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class RagContextServiceTest {
+    @Test void inheritedFileModeDoesNotRewriteEmbedOrRerankPlainFollowups() {
+        var model=mock(ConversationModel.class);var embeddings=mock(EmbeddingModel.class);var usage=mock(HarnessRequestRepository.class);
+        var service=new RagContextService(model,embeddings,properties(),provider(null),provider(null),provider(null),provider(null),usage);
+        var chat=Chat.create("assistant");
+        var request=new RequestContext("alice","assistant",chat.id(),UUID.randomUUID(),"Приступай",
+                new ChatSettings(0,false,List.of("project-files"),null),null,null,null,false,null,false,true);
+        assertThat(service.prepare(request,chat,null)).isSameAs(request);
+        verifyNoInteractions(model,embeddings,usage);
+    }
+    @Test void liveFilesCommandDoesNotCallRagDependencies() {
+        var model=mock(ConversationModel.class);var embeddings=mock(EmbeddingModel.class);var usage=mock(HarnessRequestRepository.class);
+        var service=new RagContextService(model,embeddings,properties(),provider(null),provider(null),provider(null),provider(null),usage);
+        var chat=Chat.create("assistant");
+        var request=new RequestContext("alice","assistant",chat.id(),UUID.randomUUID(),"/files Найди все использования API",
+                new ChatSettings(0,true,List.of("project-files"),null),null,null,null);
+        assertThat(service.prepare(request,chat,null)).isSameAs(request);
+        verifyNoInteractions(model,embeddings,usage);
+    }
     @Test void rewriteUsesTaskAndHistoryRetrievesOwnerCorpusAndPreservesUsageOnRerankerFailure() throws Exception {
         var prompt=new AtomicReference<String>();
         var metrics=new ChatMessage.Metrics("fixture",2,0,0,0,10,0,2,12,null,null,null,"stop");

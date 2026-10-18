@@ -18,12 +18,39 @@ const makeApi = () => ({ memory: vi.fn().mockResolvedValue({ version: 0, entries
   acceptProposal: vi.fn().mockResolvedValue({ version: 1, entries: [entry], resolvedProposals: ['proposal'] }),
   rejectProposal: vi.fn().mockResolvedValue({ ...chat, workingMemory: { ...chat.workingMemory, version: 2, proposals: [] } }),
   putMemory: vi.fn(), deleteMemory: vi.fn(), editTask: vi.fn(), advanceTask: vi.fn(),
-  pauseTask: vi.fn(), resumeTask: vi.fn(), chat: vi.fn().mockResolvedValue(chat) })
+  pauseTask: vi.fn(), resumeTask: vi.fn(), returnTaskToExecution: vi.fn(), chat: vi.fn().mockResolvedValue(chat) })
 function Harness({ api, initial = chat }) {
   const [current, setCurrent] = useState(initial)
   return <MemoryLayers agent={agent} chat={current} api={api} onChat={setCurrent} onBusy={() => {}} />
 }
 describe('explicit memory layers', () => {
+  it('shows advisory progress and directs clarifications to chat without requiring memory fields', async () => {
+    const api=makeApi()
+    render(<MemoryLayers agent={{...agent,advisoryWorkflow:true}} chat={{...chat,workingMemory:{
+      ...chat.workingMemory,requirements:{},openQuestions:['Какую версию API описать?']}}}
+      api={api} onChat={()=>{}} onBusy={()=>{}} />)
+    await screen.findByText('Пока ничего не сохранено.')
+    expect(screen.getByText(/Мягкий режим: этапы и поля памяти не блокируют работу/)).toBeInTheDocument()
+    expect(screen.getByText('Уточнения из диалога — ответьте в чате')).toBeInTheDocument()
+    expect(screen.getByText('Какую версию API описать?')).toBeInTheDocument()
+    expect(screen.queryByRole('button',{name:'Добавить требования'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button',{name:'Подтвердить требования'})).not.toBeInTheDocument()
+    expect(screen.getByRole('button',{name:'Отметить: выполнение'})).toBeEnabled()
+    expect(api.advanceTask).not.toHaveBeenCalled()
+  })
+  it('explains missing requirements and opens their editor without silently inventing them', async () => {
+    const api=makeApi()
+    render(<Harness api={api} initial={{...chat,workingMemory:{...chat.workingMemory,requirements:{},
+      openQuestions:['Пожалуйста, подтвердите этот план или внесите правки.']}}} />)
+    await screen.findByText('Пока ничего не сохранено.')
+    expect(screen.getByText(/Требования пока не сохранены/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button',{name:'Добавить требования'}))
+    const input=screen.getByLabelText('Уточнения и требования (JSON-словарь строк)')
+    expect(input).toHaveValue('{}')
+    expect(input).toHaveFocus()
+    expect(api.editTask).not.toHaveBeenCalled()
+    expect(api.advanceTask).not.toHaveBeenCalled()
+  })
   it('shows separate task data and waits for explicit long-term confirmation', async () => {
     const api = makeApi()
     render(<Harness api={api} />)
@@ -103,9 +130,56 @@ describe('explicit memory layers', () => {
     render(<Harness api={api} initial={reviewing} />)
     await screen.findByText('Пока ничего не сохранено.')
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить завершение' }))
+    expect(api.advanceTask).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Результат проверен — завершить задачу' }))
     await waitFor(() => expect(api.advanceTask).toHaveBeenCalledWith('architect', 'chat', 7))
     expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Done · завершено')
     expect(screen.queryByRole('button', { name: 'Подтвердить завершение' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Вернуть в выполнение' })).toBeEnabled()
+  })
+  it('can cancel completion without advancing and return review to execution', async () => {
+    const api = makeApi()
+    const review = { ...chat, workingMemory: { ...chat.workingMemory, version: 7, stage: 'REVIEW' } }
+    api.returnTaskToExecution.mockResolvedValue({ ...review, workingMemory: { ...review.workingMemory, version: 8, stage: 'DESIGN' } })
+    render(<Harness api={api} initial={review} />)
+    await screen.findByText('Пока ничего не сохранено.')
+    await userEvent.click(screen.getByRole('button', { name: 'Подтвердить завершение' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Отменить завершение' }))
+    expect(api.advanceTask).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Вернуть в выполнение' }))
+    await waitFor(() => expect(api.returnTaskToExecution).toHaveBeenCalledWith('architect', 'chat', 7))
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Execution · выполнение')
+  })
+  it('reopens a completed task and reports version conflicts without hiding its state', async () => {
+    const api = makeApi()
+    const done = { ...chat, workingMemory: { ...chat.workingMemory, version: 8, stage: 'DONE' } }
+    api.returnTaskToExecution.mockRejectedValueOnce(new Error('Память уже изменилась'))
+      .mockResolvedValueOnce({ ...done, workingMemory: { ...done.workingMemory, version: 9, stage: 'DESIGN' } })
+    render(<Harness api={api} initial={done} />)
+    await screen.findByText('Пока ничего не сохранено.')
+    await userEvent.click(screen.getByRole('button', { name: 'Вернуть в выполнение' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Память уже изменилась')
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Done · завершено')
+    await userEvent.click(screen.getByRole('button', { name: 'Вернуть в выполнение' }))
+    await waitFor(() => expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Execution · выполнение'))
+    expect(api.advanceTask).not.toHaveBeenCalled()
+  })
+  it('opens the decision editor and saves decisions without advancing the stage', async () => {
+    const api = makeApi()
+    const executing = { ...chat, workingMemory: { ...chat.workingMemory, stage: 'DESIGN' } }
+    api.editTask.mockResolvedValue({ ...executing, workingMemory: { ...executing.workingMemory, version: 2,
+      decisions: { document: 'project/docs/dialog-search.md' } } })
+    render(<Harness api={api} initial={executing} />)
+    await screen.findByText('Пока ничего не сохранено.')
+    await userEvent.click(screen.getByRole('button', { name: 'Зафиксировать решения' }))
+    const editor = screen.getByLabelText('Подтверждённые решения (JSON-словарь строк)')
+    await userEvent.clear(editor)
+    await userEvent.type(editor, '{{"document":"project/docs/dialog-search.md"}')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить задачу' }))
+    await waitFor(() => expect(api.editTask).toHaveBeenCalledWith('architect', 'chat', expect.objectContaining({
+      task: expect.objectContaining({ decisions: { document: 'project/docs/dialog-search.md' } }) })))
+    expect(screen.getByLabelText('Состояние задачи')).toHaveTextContent('Execution · выполнение')
+    expect(api.advanceTask).not.toHaveBeenCalled()
   })
   it('requires deletion confirmation and does not resurrect accepted proposals', async () => {
     const api = makeApi()

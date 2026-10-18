@@ -1,3 +1,4 @@
+import { useId, useState } from 'react'
 import UserProfile from './UserProfile'
 
 function ToolCard({ tool }) {
@@ -17,6 +18,36 @@ function ToolCard({ tool }) {
   </li>
 }
 
+function ServerItem({ server }) {
+  const [expanded, setExpanded] = useState(false)
+  const id = useId()
+  const tools = server.tools || []
+  return <article className="mcp-server">
+    <header className="mcp-server-header">
+      <h2 aria-label={server.name}><button type="button" className="mcp-server-toggle" id={`${id}-toggle`}
+        aria-label={`Инструменты ${server.name}`} aria-expanded={expanded} aria-controls={`${id}-tools`}
+        onClick={() => setExpanded(value => !value)}>
+        <span className="mcp-server-identity"><span className="mcp-server-name">{server.name}</span>
+          <code>{server.id}</code></span>
+        <span className="mcp-server-summary"><span className={server.connected ? 'mcp-status connected' : 'mcp-status'}>
+          {server.connected ? 'Подключён' : 'Недоступен'}</span>
+          <span className="mcp-tool-count">Инструменты: {tools.length}</span>
+          <span className="mcp-server-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span></span>
+      </button></h2>
+    </header>
+    {server.error && <p className="mcp-server-error" role="alert">{server.error}</p>}
+    <div id={`${id}-tools`} role="region" aria-labelledby={`${id}-toggle`} hidden={!expanded}>
+      {expanded && <>
+        <dl className="mcp-server-metadata"><div><dt>Версия</dt><dd>{server.version || '—'}</dd></div>
+          <div><dt>Протокол</dt><dd>{server.protocolVersion || '—'}</dd></div></dl>
+        {!server.error && (tools.length
+          ? <ul className="mcp-tools">{tools.map(tool => <ToolCard key={tool.name} tool={tool} />)}</ul>
+          : <p className="mcp-no-tools">Сервер не предоставил инструментов.</p>)}
+      </>}
+    </div>
+  </article>
+}
+
 export default function McpCatalog({ api, profile, onProfile, onLogout, servers = [], loading, error, onReload, embedded = false }) {
   return <section className="mcp-page" aria-labelledby="mcp-title">
     <header className="conversation-header"><div><span className="eyebrow">Model Context Protocol</span>
@@ -34,17 +65,7 @@ export default function McpCatalog({ api, profile, onProfile, onLogout, servers 
         <h2>MCP-серверы не настроены</h2><p>Добавьте соединение в серверную конфигурацию и перезапустите приложение.</p>
       </div>}
       {!loading && !error && <div className="mcp-server-list">{servers.map(server =>
-        <article className="mcp-server" key={server.id}>
-          <header><div><span className={server.connected ? 'mcp-status connected' : 'mcp-status'}>
-            {server.connected ? 'Подключён' : 'Недоступен'}</span>
-            <h2>{server.name}</h2><code>{server.id}</code></div>
-            <dl><div><dt>Версия</dt><dd>{server.version || '—'}</dd></div>
-              <div><dt>Протокол</dt><dd>{server.protocolVersion || '—'}</dd></div>
-              <div><dt>Инструменты</dt><dd>{server.tools.length}</dd></div></dl>
-          </header>
-          {server.error && <p className="mcp-server-error" role="alert">{server.error}</p>}
-          {!server.error && <ul className="mcp-tools">{server.tools.map(tool => <ToolCard key={tool.name} tool={tool} />)}</ul>}
-        </article>)}</div>}
+        <ServerItem key={server.id} server={server} />)}</div>}
     </div>
   </section>
 }

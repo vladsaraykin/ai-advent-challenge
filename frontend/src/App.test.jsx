@@ -96,6 +96,8 @@ describe('agent conversations', () => {
 
     expect(await screen.findByRole('heading', { name: 'MCP-подключения' })).toBeInTheDocument()
     expect(screen.getByText('Filesystem MCP Server')).toBeInTheDocument()
+    expect(screen.queryByText('read_text_file')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Инструменты Filesystem MCP Server' }))
     expect(screen.getByText('read_text_file')).toBeInTheDocument()
     expect(screen.getByText('Read a text file from an allowed directory.')).toBeInTheDocument()
     expect(screen.getByText('Подключён')).toBeInTheDocument()

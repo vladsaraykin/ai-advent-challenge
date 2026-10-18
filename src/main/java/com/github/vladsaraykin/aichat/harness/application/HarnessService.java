@@ -13,6 +13,7 @@ import reactor.core.scheduler.Schedulers;
 
 @Service
 public class HarnessService {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(HarnessService.class);
     private final ChatService chats;
     private final AgentCatalog agents;
     private final ChatSettingsRepository settings;
@@ -27,18 +28,36 @@ public class HarnessService {
     public Flux<Event> stream(String owner,String agent,UUID chatId,UUID messageId,String content) {
         var acquired=new java.util.concurrent.atomic.AtomicBoolean();
         var finished=new java.util.concurrent.atomic.AtomicBoolean();
+        var prepared=new java.util.concurrent.atomic.AtomicBoolean();
+        long started=System.nanoTime();
         return Flux.concat(Flux.just(new Event("retrieving",Map.of("messageId",messageId))),
                 Mono.fromCallable(()->prepare(owner,agent,chatId,messageId,content,acquired)).subscribeOn(workers)
-                        .flatMapMany(context->chats.stream(owner,agent,chatId,messageId,content,context.settings().mcpServerIds(),context)
+                        .doOnNext(context->{
+                            prepared.set(true);
+                            log.info("harness_request_prepared agentId={} chatId={} requestId={} mode={} ragEnabled={} mcpServers={}",
+                                    agent,chatId,messageId,context.fileOperations() ? "files" : context.projectHelp() ? "help" : "chat",
+                                    context.ragEnabled(),context.settings().mcpServerIds());
+                        })
+                        .flatMapMany(context->Flux.concat(Flux.just(new Event("request_context",Map.of(
+                                "mode",context.fileOperations() ? "FILES" : "CHAT","ragEnabled",context.ragEnabled()))),
+                                chats.stream(owner,agent,chatId,messageId,content,context.settings().mcpServerIds(),context)
                                 .map(e->{
-                                    if(e.type()==ChatService.StreamEvent.Type.COMPLETED) { requests.status(owner,messageId,"COMPLETED");finished.set(true); }
+                                    if(e.type()==ChatService.StreamEvent.Type.COMPLETED) {
+                                        if(acquired.get()) requests.status(owner,messageId,"COMPLETED");
+                                        finished.set(true);
+                                    }
                                     return new Event(e.type().name().toLowerCase(Locale.ROOT),e);
-                                })))
+                                }))))
                 .onErrorResume(McpApprovalService.Required.class,error->{
+                    log.info("harness_request_awaiting_approval agentId={} chatId={} requestId={} server={} tool={}",
+                            agent,chatId,messageId,error.call().server(),error.call().tool());
                     requests.status(owner,messageId,"AWAITING_APPROVAL");
                     finished.set(true);
                     return Flux.just(new Event("approval",error.call()));
                 }).onErrorResume(error->{
+                    log.warn("harness_request_failed agentId={} chatId={} requestId={} phase={} errorType={} errorKind={}",
+                            agent,chatId,messageId,prepared.get() ? "generation" : "preparation",
+                            error.getClass().getSimpleName(),error instanceof ChatFailure failure ? failure.kind() : "INTERNAL");
                     if(acquired.get()) {
                         requests.status(owner,messageId,"FAILED");
                         requests.find(owner,messageId).ifPresent(r->requests.incomplete(r.context()));
@@ -46,7 +65,13 @@ public class HarnessService {
                     finished.set(true);
                     String message=error instanceof ChatFailure ? error.getMessage() : "Запрос не завершён. Проверьте подключения и повторите отправку.";
                     return Flux.just(new Event("error",Map.of("message",message)));
-                }).doFinally(signal->{
+                }).doOnSubscribe(subscription->log.info(
+                        "harness_request_received agentId={} chatId={} requestId={} mode={} promptLength={}",
+                        agent,chatId,messageId,ProjectFilesCommand.matches(content) ? "files"
+                                : ProjectHelpCommand.parse(content).isPresent() ? "help" : "chat",content.length()))
+                .doFinally(signal->{
+                    log.info("harness_request_finished agentId={} chatId={} requestId={} signal={} durationMs={}",
+                            agent,chatId,messageId,signal,(System.nanoTime()-started)/1_000_000);
                     if(acquired.get() && !finished.get()) {
                         requests.status(owner,messageId,"INTERRUPTED");
                         requests.find(owner,messageId).ifPresent(r->requests.incomplete(r.context()));
@@ -73,10 +98,25 @@ public class HarnessService {
         }
         var preferences=settings.get(owner,agent,chatId);
         var help=ProjectHelpCommand.parse(content);
-        boolean gitBranch=ProjectGitCommand.requestsCurrentBranch(content,Set.copyOf(preferences.mcpServerIds()));
+        boolean explicitFiles=ProjectFilesCommand.matches(content);
+        boolean gitBranch=!explicitFiles && ProjectGitCommand.requestsCurrentBranch(content,Set.copyOf(preferences.mcpServerIds()));
+        boolean previousFiles=!gitBranch && preferences.mcpServerIds().contains("project-files")
+                && requests.latestCompleted(owner,agent,chatId).map(value->value.context().fileOperations()).orElse(false);
+        boolean files=!gitBranch && ProjectFilesCommand.continues(content,previousFiles);
+        if(files) {
+            if(!preferences.mcpServerIds().contains("project-files"))
+                log.warn("harness_request_rejected agentId={} chatId={} requestId={} reason=project_files_not_selected mcpServers={}",
+                        agent,chatId,id,preferences.mcpServerIds());
+            preferences=ProjectFilesCommand.snapshot(preferences);
+        }
+        String question=help.map(ProjectHelpCommand::question).orElse(null);
+        if(ProjectFilesCommand.exits(content)) {
+            question=content.substring(5).strip();
+            if(question.isEmpty()) question="Продолжим диалог с обычными настройками чата.";
+        }
         var initial=new RequestContext(owner,agent,chatId,id,content,preferences,
-                !gitBranch && (help.isPresent() || preferences.ragEnabled()) ? List.of() : null,null,null,
-                help.isPresent(),help.map(ProjectHelpCommand::question).orElse(null),gitBranch);
+                !files && !gitBranch && (help.isPresent() || preferences.ragEnabled()) ? List.of() : null,null,null,
+                help.isPresent(),question,gitBranch,files);
         requests.create(initial);
         acquired.set(true);
         var prepared=rag.prepare(initial,chat,requestDefinition(agent,preferences));

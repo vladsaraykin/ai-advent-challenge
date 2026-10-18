@@ -48,12 +48,14 @@ public final class ConfiguredAgent implements Agent {
         String input = mapper.writeValueAsString(java.util.Map.of("task", AgentContextBuilder.task(chat.workingMemory()),
                 "userMessage", user.content(), "assistantAnswer", assistant.content()));
         if ((long) input.length() + settings.questionsPrompt().length() > definition.maxHistoryChars())
-            return Mono.error(new ChatFailure(ChatFailure.Kind.INVALID,
+            return definition.lifecycle().advisory() ? Mono.just(chat.workingMemory()) : Mono.error(new ChatFailure(ChatFailure.Kind.INVALID,
                     "Ответ слишком большой для синхронизации вопросов. Ход не сохранён; попросите более краткий ответ."));
+        var knownUsage = new java.util.concurrent.atomic.AtomicReference<ChatMessage.Metrics>();
         var request = new ChatMessage(user.id(), ChatMessage.Role.USER, input, user.createdAt(), null);
         return model.extractQuestions(definition.withPrompt(settings.questionsPrompt(), settings.questionsMaxTokens()), List.of(request))
                 .filter(part -> part.completed() != null).single().map(part -> {
                     var reply = part.completed();
+                    knownUsage.set(reply.metrics());
                     model.recordUsage(requestContext,reply.metrics());
                     String reason = "completion";
                     try {
@@ -77,7 +79,14 @@ public final class ConfiguredAgent implements Agent {
                                 + "). Ход не сохранён; прежняя память доступна. Повторите отправку.");
                     }
                 }).onErrorMap(e -> !(e instanceof ChatFailure), e -> new ChatFailure(ChatFailure.Kind.PROVIDER,
-                        "Синхронизация вопросов не завершена. Ход не сохранён; повторите отправку."));
+                        "Синхронизация вопросов не завершена. Ход не сохранён; повторите отправку."))
+                .onErrorResume(ChatFailure.class, error -> {
+                    if (!definition.lifecycle().advisory()) return Mono.error(error);
+                    log.warn("questions_sync_skipped agentId={} chatId={} requestId={} mode=advisory",
+                            definition.id(),chat.id(),user.id());
+                    return Mono.just(knownUsage.get()==null ? chat.workingMemory()
+                            : MemoryService.addQuestions(chat.workingMemory(),List.of(),knownUsage.get()));
+                });
     }
 
     @Override public Flux<AnswerPart> answerStream(com.github.vladsaraykin.aichat.agent.domain.Chat chat,
@@ -105,7 +114,8 @@ public final class ConfiguredAgent implements Agent {
                     : "\nТы работаешь в режиме /help и отвечаешь на вопросы о текущем программном проекте. "
                         + "Используй только переданные фрагменты документации проекта и цитируй подтверждённые сведения. "
                         + "Если спрашивают о текущей ветке или составе файлов, используй соответствующий read-only инструмент "
-                        + "project-git, если он подключён; для любого MCP-вызова сначала запроси подтверждение пользователя. "
+                        + "project-git, если он подключён; разрешения на MCP проверяет UI/backend. "
+                        + "Если разрешение инструмента уже сохранено в чате, не запрашивай его повторно в тексте. "
                         + "Если документация не содержит ответа, прямо сообщи об этом; не подменяй пробел догадками.\n";
             var prompt = definition.systemPrompt() + AgentContextBuilder.profilePrompt(profile) + modePrompt;
             var projectDefinition = definition.withPrompt(prompt, definition.maxCompletionTokens());
@@ -121,7 +131,7 @@ public final class ConfiguredAgent implements Agent {
         }
         var configured = definition.withPrompt(definition.systemPrompt()
                 + AgentContextBuilder.profilePrompt(profile)
-                + AgentContextBuilder.memoryPrompt(chat.workingMemory(), entries)
+                + AgentContextBuilder.memoryPrompt(chat.workingMemory(), entries, definition.lifecycle().advisory())
                 + AgentContextBuilder.invariantsPrompt(chat.invariants()), definition.maxCompletionTokens());
         // In layered mode working memory replaces the untyped Sticky Facts extraction.
         return new ConfiguredAgent(configured, model,requestContext).answerStream(chat.summary(), chat.messages(), user,
@@ -172,7 +182,7 @@ public final class ConfiguredAgent implements Agent {
 
     @Override public Mono<LifecycleCheck> checkLifecycle(
             com.github.vladsaraykin.aichat.agent.domain.Chat chat, ChatMessage user, ChatMessage assistant) {
-        if (!definition.lifecycle().enabled()) return Mono.just(LifecycleCheck.allowed(null));
+        if (!definition.lifecycle().enabled() || definition.lifecycle().advisory()) return Mono.just(LifecycleCheck.allowed(null));
         if (assistant != null && assistant.evidence() != null && assistant.evidence().grounding() != null
                 && "ANSWER_NOT_VERIFIABLE".equals(assistant.evidence().grounding().reason())) {
             // The assistant text is a deterministic refusal produced by this application, not model output.
@@ -514,6 +524,9 @@ public final class ConfiguredAgent implements Agent {
 
     private Flux<AnswerPart> answerStream(ContextSummary summary, List<ChatMessage> history,
                                           ChatMessage userMessage, List<String> mcpServerIds) {
+        if(requestContext!=null && !requestContext.projectHelp() && requestContext.question()!=null)
+            userMessage=new ChatMessage(userMessage.id(),userMessage.role(),requestContext.promptQuestion(),userMessage.createdAt(),userMessage.metrics());
+        final ChatMessage generationMessage=userMessage;
         List<ChatMessage> context = context(summary, history, userMessage);
         if(requestContext==null) return model.stream(definition,summary,context,mcpServerIds)
                 .map(part->part.completed()==null ? AnswerPart.delta(part.delta()) : AnswerPart.completed(message(part.completed())));
@@ -528,6 +541,10 @@ public final class ConfiguredAgent implements Agent {
                     requestContext.retrieval(),requestContext.rewriteUsage(),requestContext.messageId()))));
         }
         var configured=definition;
+        if(requestContext.fileOperations())
+            configured=definition.withPrompt(definition.systemPrompt()
+                    +com.github.vladsaraykin.aichat.harness.application.ProjectFilesCommand.INSTRUCTION,
+                    definition.maxCompletionTokens());
         if(rag) configured=definition.withPrompt(definition.systemPrompt()+"\n"
                 +com.github.vladsaraykin.aichat.rag.application.GroundedAnswerValidator.INSTRUCTION
                 +"\nУчитывай цель и ограничения пользователя при адаптации ответа. Инструменты возвращают дополнительные пронумерованные источники.\n"
@@ -556,7 +573,7 @@ public final class ConfiguredAgent implements Agent {
                 catch(com.github.vladsaraykin.aichat.rag.application.GroundedAnswerValidator.Failure failure) {
                     log.warn("rag_answer_validation_rejected agentId={} chatId={} requestId={} attempt=primary reason={}",
                             definition.id(), requestContext.chatId(), requestContext.messageId(), failure.reason());
-                    return repairGroundedAnswer(userMessage, all, reply);
+                    return repairGroundedAnswer(generationMessage, all, reply);
                 }
             }
             return Mono.just(AnswerPart.completed(new ChatMessage(UUID.randomUUID(),ChatMessage.Role.ASSISTANT,text,Instant.now(),

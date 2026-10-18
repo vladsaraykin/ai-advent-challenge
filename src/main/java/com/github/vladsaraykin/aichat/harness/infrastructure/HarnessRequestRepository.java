@@ -32,6 +32,10 @@ public class HarnessRequestRepository {
                 UUID.class,owner,chat).stream().findFirst().flatMap(id->find(owner,id))
                 .filter(request->Set.of("AWAITING_APPROVAL","FAILED","INTERRUPTED","RUNNING").contains(request.status()));
     }
+    public Optional<RequestView> latestCompleted(String owner,String agent,UUID chat) {
+        return jdbc.queryForList("SELECT message_id FROM rag.harness_requests WHERE owner_username=? AND chat_id=? AND payload->>'agentId'=? AND status='COMPLETED' ORDER BY updated_at DESC,message_id DESC LIMIT 1",
+                UUID.class,owner,chat,agent).stream().findFirst().flatMap(id->find(owner,id));
+    }
     public void create(RequestContext context) {
         try { jdbc.update("INSERT INTO rag.harness_requests(owner_username,chat_id,message_id,payload) VALUES(?,?,?,?::jsonb)",
                 context.owner(),context.chatId(),context.messageId(),json.writeValueAsString(context)); }

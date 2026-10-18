@@ -14,6 +14,19 @@ import reactor.core.publisher.Mono;
 import static org.assertj.core.api.Assertions.*;
 
 class MemoryLayersTest {
+    static AgentCatalog strictRegistry(ConversationModel model) throws Exception {
+        var registry=new AgentRegistry(model,"classpath:agents/*.yaml");
+        return new AgentCatalog() {
+            public List<AgentDefinition> definitions() {
+                return registry.definitions().stream().map(d->d.withLifecycle(new AgentDefinition.LifecycleSettings(
+                        d.lifecycle().enabled(),d.lifecycle().maxCompletionTokens(),d.lifecycle().guardPrompt(),false))).toList();
+            }
+            public Agent get(String id) {
+                var definition=definitions().stream().filter(d->d.id().equals(id)).findFirst().orElseThrow();
+                return new ConfiguredAgent(definition,model);
+            }
+        };
+    }
     @Test void insufficientRagAnswerDoesNotCreateAFalseOpenQuestion() throws Exception {
         var questionCalls = new AtomicInteger();
         ConversationModel model = new ConversationModel() {
@@ -131,7 +144,7 @@ class MemoryLayersTest {
                 return model.summarize(d, previous, messages);
             }
         };
-        return new ChatService(new AgentRegistry(wrapped, "classpath:agents/*.yaml"),
+        return new ChatService(strictRegistry(wrapped),
                 new FileChatRepository(directory.resolve("chats").toString()),
                 new FileLongTermMemoryRepository(directory.resolve("long-term").toString()));
     }
@@ -298,6 +311,17 @@ class MemoryLayersTest {
         root = service.advanceTask("architect", id, root.workingMemory().version());
         root = service.advanceTask("architect", id, root.workingMemory().version());
         assertThat(root.workingMemory().stage()).isEqualTo(WorkingMemory.Stage.DONE);
+        var done = root;
+        root = service.returnTaskToExecution(ChatRepository.LEGACY_OWNER, "architect", id, done.workingMemory().version());
+        assertThat(root.workingMemory().stage()).isEqualTo(WorkingMemory.Stage.DESIGN);
+        assertThat(root.messages()).isEqualTo(done.messages());
+        assertThat(root.workingMemory().decisions()).isEqualTo(done.workingMemory().decisions());
+        var restarted = service((d, messages) -> reply(extraction(d) ? EXTRACT : "ok"));
+        assertThat(restarted.get("architect", id)).isEqualTo(root);
+        assertThatThrownBy(() -> restarted.returnTaskToExecution(ChatRepository.LEGACY_OWNER, "architect", id,
+                done.workingMemory().version())).hasMessageContaining("изменил");
+        root = service.advanceTask("architect", id, root.workingMemory().version());
+        root = service.advanceTask("architect", id, root.workingMemory().version());
         var fork = service.fork("architect", id, "A", "B");
         var a = fork.branches().getFirst(); var b = fork.branches().getLast();
         assertThat(a.workingMemory().goal()).isEqualTo(root.workingMemory().goal());
@@ -306,6 +330,8 @@ class MemoryLayersTest {
         assertThat(changed.workingMemory().stage()).isEqualTo(WorkingMemory.Stage.REQUIREMENTS);
         assertThat(service.get("architect", b.id()).workingMemory().stage()).isEqualTo(WorkingMemory.Stage.DONE);
         assertThatThrownBy(() -> service.advanceTask("architect", id, 0)).hasMessageContaining("Checkpoint");
+        assertThatThrownBy(() -> service.returnTaskToExecution(ChatRepository.LEGACY_OWNER, "architect", id, 0))
+                .hasMessageContaining("Checkpoint");
         var inFlight = service.stream("architect", a.id(), UUID.randomUUID(), "Дальше");
         assertThatThrownBy(() -> service.advanceTask("architect", a.id(), changed.workingMemory().version())).hasMessageContaining("ожидается");
         inFlight.collectList().block();

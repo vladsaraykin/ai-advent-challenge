@@ -19,6 +19,7 @@ class AgentRegistryTest {
         assertThat(registry.get("architect").definition().invariants().enabled()).isTrue();
         assertThat(registry.get("architect").definition().invariants().guardPrompt()).contains("CONFLICT");
         assertThat(registry.get("architect").definition().lifecycle().enabled()).isTrue();
+        assertThat(registry.get("architect").definition().lifecycle().advisory()).isTrue();
         assertThat(registry.get("architect").definition().lifecycle().guardPrompt()).contains("PREMATURE_EXECUTION");
         assertThat(registry.get("architect").definition().pricing()).isEqualTo(registry.get("techno").definition().pricing());
         assertThat(registry.get("assistant").definition().name()).isEqualTo("Личный ассистент");

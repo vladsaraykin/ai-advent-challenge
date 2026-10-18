@@ -14,6 +14,7 @@ import UserProfile from './components/UserProfile'
 import McpCatalog from './components/McpCatalog'
 import RagDocuments from './components/RagDocuments'
 import ToolApproval from './components/ToolApproval'
+import ToolPermissions from './components/ToolPermissions'
 import RequestUsage from './components/RequestUsage'
 import RetrievalSettings from './components/RetrievalSettings'
 import HealthMonitor from './components/HealthMonitor'
@@ -53,6 +54,8 @@ export default function App({ api = agentApi }) {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [transcript, setTranscript] = useState(null)
   const [approval, setApproval] = useState(null)
+  const [filesMode, setFilesMode] = useState(false)
+  const [permissionsRevision, setPermissionsRevision] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(() => !window.matchMedia?.('(max-width: 850px)').matches)
   const [requestUsage, setRequestUsage] = useState([])
   const [activeJob, setActiveJob] = useState(null)
@@ -62,15 +65,22 @@ export default function App({ api = agentApi }) {
   const agent = agents.find(item => item.id === agentId)
   const draftKey = chat ? `${agentId}/${chat.id}` : agentId
   const draft = drafts[draftKey] || ''
+  const filesCommand = /^\/files(?:[ \t\n]|$)/.test(draft.trim())
+  const filesSelected = api.chatSettings ? settings.mcpServerIds.includes('project-files')
+    : mcpEnabled && mcpServerIds.includes('project-files')
+  const filesServer = mcpServers.find(server => server.id === 'project-files' && server.connected && !server.error && server.tools?.length)
+  const otherFilesServers = settings.mcpServerIds.filter(id => id !== 'ai-advent-project-files')
+  const activeFilesMode = filesMode && settings.mcpServerIds.includes('project-files')
 
   useEffect(() => {
     let active = true
-    setApproval(null); setActiveJob(null); if (!busyRef.current) setPendingMessage(''); setTranscript(null)
+    setApproval(null); setFilesMode(false); setActiveJob(null); if (!busyRef.current) setPendingMessage(''); setTranscript(null)
     if (!chat || !api.chatSettings) { setSettingsReady(true); return }
     setSettingsReady(false)
     Promise.all([api.chatSettings(agentId, chat.id), api.chatHistory(agentId, chat.id), api.pendingRequest(agentId, chat.id)])
       .then(([preferences, history, outstanding]) => {
         if (!active) return
+        setFilesMode(outstanding.mode === 'FILES')
         setSettings(preferences); setTranscript(history)
         setMcpServerIds(preferences.mcpServerIds); setMcpEnabled(!!preferences.mcpServerIds.length)
         const awaiting = outstanding.calls?.find(call => call.status === 'AWAITING_APPROVAL')
@@ -150,27 +160,31 @@ export default function App({ api = agentApi }) {
       'summarizing', 'checking_invariants', 'checking_lifecycle', 'using_mcp', 'generating',
       'validating_lifecycle', 'validating_answer'].map(phase => [phase, () => setStreamPhase(phase)]))
     return { ...handlers,
+      request_context: context => setFilesMode(context.mode === 'FILES'),
       delta: part => { setStreamPhase('streaming'); setStreamedAnswer(value => value + (part.text || '')) },
       approval: call => requested(call),
       completed: event => { completed(event.chat); if (event.warning) setNotice(event.warning) }
     }
   }
 
-  async function decideTool(allow) {
+  async function decideTool(allow, rememberTool = false) {
     if (!approval || busyRef.current) return
     const current = approval
     busyRef.current = true; setPending(true); setStreamedAnswer(''); setStreamPhase('using_mcp'); setError('')
     let nextApproval = null
     try {
       let completed
-      await api.approveTool(agentId, chat.id, current.requestId, { callId: current.call.id, allow },
+      await api.approveTool(agentId, chat.id, current.requestId, { callId: current.call.id, allow, ...(rememberTool ? { remember: true } : {}) },
         streamHandlers(value => { completed = value }, call => { nextApproval = { call, requestId: current.requestId }; setApproval(nextApproval) }))
       if (completed) {
         updateChat(completed); setTranscript(await api.chatHistory(agentId, chat.id))
         setApproval(null); setPendingMessage(''); retry.current = null
       } else if (!nextApproval) throw new Error('Поток прерван. Обновите страницу для проверки состояния запроса.')
     } catch (exception) { setError(exception.message); setApproval(null) }
-    finally { busyRef.current = false; setPending(false); setStreamedAnswer(''); setStreamPhase('') }
+    finally {
+      if (rememberTool) setPermissionsRevision(value => value + 1)
+      busyRef.current = false; setPending(false); setStreamedAnswer(''); setStreamPhase('')
+    }
   }
 
   async function cancelToolRequest() {
@@ -314,6 +328,10 @@ export default function App({ api = agentApi }) {
     if (busyRef.current || loading || !agent || !settingsReady || settingsBusy || approval) return
     const content = draft.trim()
     if (!content) { setError('Введите сообщение'); return }
+    if (filesCommand && !filesSelected) {
+      setError('Для /files выберите project-files для этого чата. Кнопка подключения находится под сообщением; ввод сохранён.')
+      return
+    }
     if (mcpEnabled && !mcpServerIds.length) { setError('Выберите хотя бы один MCP-сервер'); return }
     const selectedMcp = mcpEnabled ? [...mcpServerIds].sort() : []
     busyRef.current = true; setPending(true); setStreamedAnswer(''); setStreamPhase('connecting')
@@ -376,8 +394,10 @@ export default function App({ api = agentApi }) {
   const chatControls = <section className="chat-properties" aria-label="Свойства чата">
     <h3>Свойства чата</h3>
     <div className="chat-context-bar"><label><input type="checkbox" checked={settings.ragEnabled}
-      disabled={pending || !settingsReady || settingsBusy || !!approval || chat?.readOnly} onChange={event => changeSettings({ ragEnabled: event.target.checked })} /> RAG</label>
-      <span>{settings.ragEnabled ? 'Все мои документы · строгие источники' : 'Обычный диалог с LLM'}</span>
+      disabled={activeFilesMode || pending || !settingsReady || settingsBusy || !!approval || chat?.readOnly} onChange={event => changeSettings({ ragEnabled: event.target.checked })} /> RAG</label>
+      <span role={activeFilesMode ? 'status' : undefined}>{activeFilesMode
+        ? 'Файловый режим MCP · RAG временно не используется · /chat для выхода'
+        : settings.ragEnabled ? 'Все мои документы · строгие источники' : 'Обычный диалог с LLM'}</span>
       {settingsBusy && <small role="status">Сохраняем настройки…</small>}</div>
   </section>
 
@@ -417,6 +437,14 @@ export default function App({ api = agentApi }) {
       {notice && <div className="notice-banner" role="status">{notice}</div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span>
         {!pending && <button type="button" onClick={() => { setError(''); setReload(value => value + 1) }}>Обновить</button>}</div>}
+      {filesCommand && !filesSelected && !pending && !approval && <div className="notice-banner" role="region" aria-label="Подключение файлового MCP">
+        <p>Для /files нужен сервер project-files, выбранный именно для этого чата. Наличие сервера во вкладке MCP не включает его в чат автоматически.</p>
+        {filesServer ? <button type="button" disabled={!settingsReady || settingsBusy || chat?.readOnly || otherFilesServers.length >= 8}
+          onClick={() => changeSettings({ mcpServerIds: [...otherFilesServers, 'project-files'] })}>Выбрать project-files для чата</button>
+          : <p>Подключение project-files недоступно. Проверьте MCP_ENABLED=true, перезапустите backend с новой конфигурацией и обновите список MCP.</p>}
+        {otherFilesServers.length >= 8 && <p>Достигнут лимит 8 MCP-серверов. Сначала снимите один из выбранных серверов в настройках.</p>}
+        <button type="button" onClick={() => setActiveView('mcp')}>Открыть вкладку MCP</button>
+      </div>}
       <MessageComposer draft={draft} onChange={value => setDrafts(current => ({ ...current, [draftKey]: value }))}
         onSubmit={send} pending={pending} showMcpControls={!api.chatSettings} disabled={loading || !settingsReady || settingsBusy || !!approval || !agent || chat?.readOnly || !!chat?.branches?.length || !!deleteTarget || deleting || memoryBusy}
         mcpServers={mcpServers.filter(item => item.connected && !item.error && item.tools?.length)}
@@ -447,11 +475,14 @@ export default function App({ api = agentApi }) {
       {agent?.invariants && <details className="inspector-settings"><summary>Инварианты</summary><InvariantPanel agent={agent} chat={chat} api={api}
         disabled={pending || !!deleteTarget || deleting} onChat={updateChat}
         onBusy={value => { busyRef.current = value; setMemoryBusy(value) }} /></details>}
-      {api.chatSettings && <section className="inspector-settings"><h3>MCP-инструменты</h3><p>Каждый вызов требует подтверждения. Доступен на этапах Execution и Validation.</p>
+      {api.chatSettings && <section className="inspector-settings"><h3>MCP-инструменты</h3><p>Первый вызов требует подтверждения. Можно разрешить инструмент для всего чата.
+        {agent?.advisoryWorkflow ? ' В мягком режиме ручное переключение этапов не требуется.' : ' Доступен на этапах Execution и Validation.'}</p>
         {mcpServers.filter(server => server.connected && !server.error && server.tools?.length).map(server => <label className="server-option" key={server.id}>
           <input type="checkbox" checked={settings.mcpServerIds.includes(server.id)} disabled={pending || !settingsReady || settingsBusy || !!approval || chat.readOnly || (!settings.mcpServerIds.includes(server.id) && settings.mcpServerIds.length >= 8)}
             onChange={event => changeSettings({ mcpServerIds: event.target.checked ? [...settings.mcpServerIds, server.id] : settings.mcpServerIds.filter(id => id !== server.id) })} />
           <span>{server.name}<small>{server.tools.length} инструментов</small></span></label>)}
+        {api.toolPermissions && <ToolPermissions key={`${agentId}/${chat.id}`} api={api} agentId={agentId} chatId={chat.id}
+          revision={permissionsRevision} disabled={pending || !settingsReady || !!approval || chat.readOnly} />}
         {!mcpServers.length && <p>Нет подключённых серверов</p>}{mcpError && <p role="alert">{mcpError}</p>}
       </section>}
     </aside>}

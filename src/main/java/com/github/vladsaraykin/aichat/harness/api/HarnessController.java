@@ -47,14 +47,28 @@ public class HarnessController {
     @GetMapping("/pending") public Map<String,Object> pending(Principal user,@PathVariable String agentId,@PathVariable UUID chatId) {
         chats.get(user.getName(),agentId,chatId);
         var request=requests.pending(user.getName(),chatId);
-        if(request.isEmpty()) return Map.of();
-        return Map.of("request",request.get(),"calls",approvals.calls(user.getName(),request.get().context().messageId()));
+        boolean files=request.map(value->value.context().fileOperations()).orElseGet(()->
+                requests.latestCompleted(user.getName(),agentId,chatId).map(value->value.context().fileOperations()).orElse(false));
+        if(request.isEmpty()) return Map.of("mode",files ? "FILES" : "CHAT");
+        return Map.of("mode",files ? "FILES" : "CHAT","request",request.get(),"calls",approvals.calls(user.getName(),request.get().context().messageId()));
     }
     @PostMapping(value="/messages/stream",produces=MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<Flux<ServerSentEvent<Object>>> stream(Principal user,@PathVariable String agentId,@PathVariable UUID chatId,@Valid @RequestBody Message message) {
         return response(harness.stream(user.getName(),agentId,chatId,message.messageId(),message.content().strip()));
     }
-    public record Approval(@NotNull UUID callId,boolean allow) { }
+    public record Approval(@NotNull UUID callId,boolean allow,Boolean remember) {
+        public Approval { remember=Boolean.TRUE.equals(remember); }
+    }
+    @GetMapping("/tool-permissions") public List<McpApprovalService.Permission> toolPermissions(
+            Principal user,@PathVariable String agentId,@PathVariable UUID chatId) {
+        chats.get(user.getName(),agentId,chatId);
+        return approvals.permissions(user.getName(),chatId);
+    }
+    @DeleteMapping("/tool-permissions") public void revokeToolPermission(Principal user,@PathVariable String agentId,
+            @PathVariable UUID chatId,@RequestParam @Size(max=100) String server,@RequestParam @Size(max=200) String tool) {
+        chats.get(user.getName(),agentId,chatId);
+        approvals.revoke(user.getName(),chatId,server,tool);
+    }
     @GetMapping("/requests/{requestId}") public Map<String,Object> request(Principal user,@PathVariable String agentId,@PathVariable UUID chatId,@PathVariable UUID requestId) {
         chats.get(user.getName(),agentId,chatId);
         var request=owned(user.getName(),agentId,chatId,requestId);
@@ -65,7 +79,7 @@ public class HarnessController {
             @PathVariable UUID requestId,@Valid @RequestBody Approval approval) {
         var request=owned(user.getName(),agentId,chatId,requestId);
         if(!request.status().equals("AWAITING_APPROVAL")) throw new ChatFailure(ChatFailure.Kind.INVALID,"Запрос не ожидает подтверждения.");
-        approvals.decide(user.getName(),requestId,approval.callId(),approval.allow());
+        approvals.decide(user.getName(),requestId,approval.callId(),approval.allow(),approval.remember());
         return response(harness.stream(user.getName(),agentId,chatId,requestId,request.context().content()));
     }
     @DeleteMapping("/requests/{requestId}") public void cancel(Principal user,@PathVariable String agentId,@PathVariable UUID chatId,@PathVariable UUID requestId) {

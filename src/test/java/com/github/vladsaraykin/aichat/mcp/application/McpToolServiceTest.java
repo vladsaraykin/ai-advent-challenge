@@ -18,6 +18,34 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
 class McpToolServiceTest {
+    @Test
+    void missingDocumentReadDoesNotAbortSpringAiCallbackOrFollowingWrite() {
+        var files=client("ai-advent-project-files","project_read_files");
+        var read=files.listTools().tools().getFirst();
+        var write=new McpSchema.Tool("project_write_document","Write","Write a document",
+                Map.of("type","object"),null,null,Map.of(),List.of());
+        when(files.listTools()).thenReturn(new McpSchema.ListToolsResult(List.of(read,write),null,Map.of()));
+        when(files.callTool(any())).thenAnswer(invocation -> {
+            McpSchema.CallToolRequest request=invocation.getArgument(0);
+            var body=request.name().equals("project_read_files")
+                    ? "{\"files\":[{\"path\":\"project/docs/user.md\",\"exists\":false,\"content\":null,\"sha256\":null,\"error\":\"file_not_found\"}]}"
+                    : "{\"path\":\"project/docs/user.md\",\"saved\":true}";
+            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent(body)),false,null,Map.of());
+        });
+        var callbacks=new McpToolService(provider(List.of(files))).callbacks(List.of("project-files"));
+        assertThat(callbacks.getFirst().call("{\"paths\":[\"project/docs/user.md\"]}"))
+                .contains("file_not_found","exists","false");
+        assertThat(callbacks.getLast().call("{\"path\":\"project/docs/user.md\",\"content\":\"# User API\",\"expectedSha256\":null}"))
+                .contains("saved","true");
+        verify(files,org.mockito.Mockito.times(2)).callTool(any());
+    }
+    @Test
+    void resolvesFilesCallbacksByTheSameStableIdUsedByTheSlashCommand() {
+        var files=client("ai-advent-project-files", "project_read_files");
+        var callbacks=new McpToolService(provider(List.of(files))).callbacks(List.of("project-files"));
+        assertThat(callbacks).extracting(value->value.getToolDefinition().name()).containsExactly("project_read_files");
+        verify(files,never()).callTool(any());
+    }
 
     @Test
     void routesDependentCallsToTwoSelectedServersOnly() {
@@ -54,16 +82,18 @@ class McpToolServiceTest {
     }
 
     @Test
-    void limitsCallsAcrossServersPerRequest() {
+    void continuesBeyond24CallsAndBoundsCallbackAttemptsAcrossSelectedServers() {
         var first = client("one", "read");
         var second = client("two", "write");
         when(first.callTool(any())).thenReturn(new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("ok")), false, null, Map.of()));
         when(second.callTool(any())).thenReturn(new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("ok")), false, null, Map.of()));
-        var service = new McpToolService(provider(List.of(first, second)));
+        var service = new McpToolService(provider(List.of(first, second)), null, new McpCallBudget(32, 40));
         var callbacks = service.callbacks(List.of("one", "two"));
-        for (int i = 0; i < 24; i++) callbacks.get(i % 2).call("{}");
+        for (int i = 0; i < 40; i++) assertThat(callbacks.get(i % 2).call("{}")).contains("ok");
         assertThatThrownBy(() -> callbacks.getFirst().call("{}"))
-                .isInstanceOf(ChatFailure.class).hasMessageContaining("24");
+                .isInstanceOf(ChatFailure.class).hasMessageContaining("40");
+        verify(first, org.mockito.Mockito.times(20)).callTool(any());
+        verify(second, org.mockito.Mockito.times(20)).callTool(any());
         assertThat(service.callbacks(List.of("one")).getFirst().call("{}")).contains("ok");
     }
 

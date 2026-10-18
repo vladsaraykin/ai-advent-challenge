@@ -100,6 +100,7 @@ export const agentApi = {
   advanceTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/advance', 'POST', { version }),
   pauseTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/pause', 'POST', { version }),
   resumeTask: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/resume', 'POST', { version }),
+  returnTaskToExecution: (agentId, chatId, version) => jsonRequest(chatPath(agentId, chatId) + '/task/return-to-execution', 'POST', { version }),
   putInvariant: (agentId, chatId, id, body) => jsonRequest(chatPath(agentId, chatId)
     + `/invariants/${encodeURIComponent(id)}`, 'PUT', body),
   deleteInvariant: (agentId, chatId, id, version) => jsonRequest(chatPath(agentId, chatId)
@@ -130,6 +131,9 @@ export const agentApi = {
   pendingRequest: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/pending'),
   requestDetails: (agentId, chatId, id) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + `/requests/${id}`),
   approveTool: (agentId, chatId, id, body, handlers) => stream(chatPath(agentId, chatId) + `/requests/${id}/approval/stream`, body, handlers, '/api/harness/agents'),
+  toolPermissions: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/tool-permissions'),
+  revokeToolPermission: (agentId, chatId, server, tool) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId)
+    + `/tool-permissions?server=${encodeURIComponent(server)}&tool=${encodeURIComponent(tool)}`, { method: 'DELETE' }),
   cancelRequest: (agentId, chatId, id) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + `/requests/${id}`, { method: 'DELETE' }),
   sendStream: (agentId, chatId, message, handlers) =>
     stream(chatPath(agentId, chatId) + '/messages/stream', message, handlers, '/api/harness/agents')

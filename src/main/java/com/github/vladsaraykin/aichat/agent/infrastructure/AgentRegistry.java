@@ -123,8 +123,10 @@ public class AgentRegistry implements AgentCatalog {
     }
     private static AgentDefinition.LifecycleSettings lifecycle(Properties p) {
         boolean enabled = Boolean.parseBoolean(p.getProperty("lifecycle.enabled", "false"));
+        String mode=p.getProperty("lifecycle.mode", "strict");
+        if (!Set.of("strict","advisory").contains(mode)) throw new IllegalArgumentException("Invalid lifecycle.mode");
         return new AgentDefinition.LifecycleSettings(enabled,
                 Integer.parseInt(p.getProperty("lifecycle.max-completion-tokens", "600")),
-                p.getProperty("lifecycle.guard-prompt", enabled ? null : "disabled"));
+                p.getProperty("lifecycle.guard-prompt", enabled ? null : "disabled"), mode.equals("advisory"));
     }
 }

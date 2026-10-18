@@ -19,14 +19,19 @@ public class McpToolService {
     private static final Logger log = LoggerFactory.getLogger(McpToolService.class);
     private final ObjectProvider<List<McpSyncClient>> clients;
     private final McpApprovalService approvals;
+    private final McpCallBudget budget;
 
     public McpToolService(ObjectProvider<List<McpSyncClient>> clients) {
         this(clients,null);
     }
-    @org.springframework.beans.factory.annotation.Autowired
     public McpToolService(ObjectProvider<List<McpSyncClient>> clients,McpApprovalService approvals) {
+        this(clients, approvals, McpCallBudget.defaults());
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public McpToolService(ObjectProvider<List<McpSyncClient>> clients,McpApprovalService approvals,McpCallBudget budget) {
         this.clients = clients;
         this.approvals = approvals;
+        this.budget = budget;
     }
 
     public List<ToolCallback> callbacks(List<String> serverIds) {
@@ -49,21 +54,23 @@ public class McpToolService {
             }
         }
         var calls = new java.util.concurrent.atomic.AtomicInteger();
-        return result.stream().map(delegate -> limited(delegate, calls)).toList();
+        return result.stream().map(delegate -> limited(delegate, calls, budget.maxCallbackAttempts())).toList();
     }
     public List<com.github.vladsaraykin.aichat.rag.domain.RagQuestion.Source> sources(
             com.github.vladsaraykin.aichat.harness.domain.RequestContext context) {
         return approvals==null ? List.of() : approvals.sources(context);
     }
 
-    private static ToolCallback limited(ToolCallback delegate, java.util.concurrent.atomic.AtomicInteger calls) {
+    private static ToolCallback limited(ToolCallback delegate, java.util.concurrent.atomic.AtomicInteger calls, int maximum) {
         return new ToolCallback() {
             @Override public ToolDefinition getToolDefinition() { return delegate.getToolDefinition(); }
             @Override public ToolMetadata getToolMetadata() { return delegate.getToolMetadata(); }
             @Override public String call(String input) { return call(input, null); }
             @Override public String call(String input, org.springframework.ai.chat.model.ToolContext context) {
-                if (calls.incrementAndGet() > 24) {
-                    throw new ChatFailure(ChatFailure.Kind.INVALID, "Достигнут лимит 24 MCP-вызовов на запрос.");
+                if (calls.incrementAndGet() > maximum) {
+                    log.warn("mcp_callback_budget_exhausted maximum={}", maximum);
+                    throw new ChatFailure(ChatFailure.Kind.INVALID, "Достигнут защитный лимит " + maximum
+                            + " обращений к MCP за одну генерацию. Выполненные действия сохранены; сузьте задачу или увеличьте MCP_MAX_CALLBACK_ATTEMPTS.");
                 }
                 return delegate.call(input, context);
             }

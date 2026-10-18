@@ -150,7 +150,7 @@ public class ProjectDocumentationSyncService {
             }
             if (includeCode) {
                 for (String directory : java.util.List.of("src/main/java", "src/test/java", "src/main/resources/db",
-                        "frontend/src", "mcp/project-git")) {
+                        "frontend/src", "mcp/project-git", "mcp/project-files")) {
                     Path sourceRoot = realRoot.resolve(directory);
                     Path currentPath = realRoot;
                     for (Path segment : realRoot.relativize(sourceRoot)) {

@@ -5,7 +5,7 @@ import java.util.List;
 
 /** Deterministic lifecycle for an architect task. LLM output may update data, never transitions. */
 public final class TaskStateMachine {
-    public enum Event { TASK_DATA_UPDATED, CONFIRM_CURRENT_STAGE, PAUSE, RESUME }
+    public enum Event { TASK_DATA_UPDATED, CONFIRM_CURRENT_STAGE, CONFIRM_PROGRESS, RETURN_TO_EXECUTION, PAUSE, RESUME }
 
     public WorkingMemory transition(WorkingMemory before, WorkingMemory candidate, Event event) {
         WorkingMemory.Stage stage = before.stage();
@@ -24,11 +24,18 @@ public final class TaskStateMachine {
                     stage = WorkingMemory.Stage.DESIGN;
                 }
             }
-            case CONFIRM_CURRENT_STAGE -> {
+            case CONFIRM_CURRENT_STAGE, CONFIRM_PROGRESS -> {
                 if (status == WorkingMemory.Status.PAUSED) {
                     throw new ChatFailure(ChatFailure.Kind.INVALID, "Сначала продолжите приостановленную задачу.");
                 }
-                stage = advance(candidate);
+                stage = advance(candidate, event == Event.CONFIRM_CURRENT_STAGE);
+            }
+            case RETURN_TO_EXECUTION -> {
+                if (status == WorkingMemory.Status.PAUSED)
+                    throw new ChatFailure(ChatFailure.Kind.INVALID, "Сначала продолжите приостановленную задачу.");
+                if (stage != WorkingMemory.Stage.REVIEW && stage != WorkingMemory.Stage.DONE)
+                    throw new ChatFailure(ChatFailure.Kind.INVALID, "Возврат в выполнение доступен из Validation или Done.");
+                stage = WorkingMemory.Stage.DESIGN;
             }
             case PAUSE -> {
                 if (status == WorkingMemory.Status.PAUSED) return before;
@@ -44,15 +51,18 @@ public final class TaskStateMachine {
         return copy(value, version, stage, status);
     }
 
-    private WorkingMemory.Stage advance(WorkingMemory memory) {
-        if (memory.goal().isBlank() || memory.requirements().isEmpty() || !memory.openQuestions().isEmpty()) {
+    private WorkingMemory.Stage advance(WorkingMemory memory, boolean strict) {
+        if (strict && (memory.goal().isBlank() || memory.requirements().isEmpty())) {
             throw new ChatFailure(ChatFailure.Kind.INVALID,
-                    "Заполните цель и требования, закройте открытые вопросы перед подтверждением этапа.");
+                    "Заполните цель и требования перед подтверждением этапа.");
         }
+        if (strict && !memory.openQuestions().isEmpty())
+            throw new ChatFailure(ChatFailure.Kind.INVALID,
+                    "Остались открытые вопросы по задаче. Ответьте на них или измените данные задачи перед подтверждением этапа.");
         return switch (memory.stage()) {
             case REQUIREMENTS -> WorkingMemory.Stage.DESIGN;
             case DESIGN -> {
-                if (memory.decisions().isEmpty()) {
+                if (strict && memory.decisions().isEmpty()) {
                     throw new ChatFailure(ChatFailure.Kind.INVALID, "Сначала зафиксируйте решения задачи.");
                 }
                 yield WorkingMemory.Stage.REVIEW;

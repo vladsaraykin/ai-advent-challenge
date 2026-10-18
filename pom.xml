@@ -137,6 +137,15 @@
                         <goals><goal>npm</goal></goals>
                         <configuration><arguments>run build</arguments></configuration>
                     </execution>
+                    <execution>
+                        <id>mcp-tests</id>
+                        <phase>test</phase>
+                        <goals><goal>npm</goal></goals>
+                        <configuration>
+                            <workingDirectory>mcp</workingDirectory>
+                            <arguments>test</arguments>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>

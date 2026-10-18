@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 
 const COMMANDS = [
   { name: '/help', description: 'Задать вопрос о проекте по README и документации project/docs' },
-  { name: '/model', description: 'Выбрать модель и уровень reasoning для этого чата' }
+  { name: '/model', description: 'Выбрать модель и уровень reasoning для этого чата' },
+  { name: '/files', description: 'Найти и проанализировать файлы проекта, подготовить diff или обновить документацию через MCP' },
+  { name: '/chat', description: 'Завершить файловый режим и вернуться к обычным настройкам чата и RAG' }
 ]
 
 export default function MessageComposer({ draft, onChange, onSubmit, pending, disabled, mcpServers = [],

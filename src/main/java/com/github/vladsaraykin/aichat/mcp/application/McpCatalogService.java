@@ -37,6 +37,7 @@ public class McpCatalogService {
             return List.of(
                     unavailable("filesystem", "Filesystem MCP Server", error),
                     unavailable("project-git", "Project Git MCP", error),
+                    unavailable("project-files", "Project Files MCP", error),
                     unavailable("excel", "Excel MCP", error));
         }
         log.info("mcp_clients_discovered count={}", configuredClients.size());
@@ -106,6 +107,7 @@ public class McpCatalogService {
         // Client metadata is shared by all stdio connections; identify each connection
         // from the MCP server metadata instead so selection and callback routing stay distinct.
         if (normalized.contains("project-git") || normalized.contains("project_git")) return "project-git";
+        if (normalized.equals("ai-advent-project-files") || normalized.equals("project-files")) return "project-files";
         if (normalized.contains("filesystem")) return "filesystem";
         if (normalized.contains("excel")) return "excel";
         return normalized;

@@ -14,11 +14,28 @@ import static org.assertj.core.api.Assertions.*;
 
 class MemoryControllerTest {
     @TempDir Path directory;
+    @Test void returnToExecutionUsesAuthenticatedOwnerAndOptimisticVersion() throws Exception {
+        var service = org.mockito.Mockito.mock(ChatService.class);
+        var chat = com.github.vladsaraykin.aichat.agent.domain.Chat.create("assistant");
+        org.mockito.Mockito.when(service.returnTaskToExecution("alice", "assistant", chat.id(), 7)).thenReturn(chat);
+        org.mockito.Mockito.when(service.returnTaskToExecution("alice", "assistant", chat.id(), 6))
+                .thenThrow(new ChatFailure(ChatFailure.Kind.BUSY, "Память уже изменилась."));
+        var mvc=MockMvcBuilders.standaloneSetup(new MemoryController(service))
+                .setControllerAdvice(new ChatExceptionHandler()).build();
+        var path="/api/agents/assistant/chats/"+chat.id()+"/task/return-to-execution";
+        mvc.perform(post(path).principal(()->"alice").contentType("application/json").content("{\"version\":7}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(chat.id().toString()));
+        org.mockito.Mockito.verify(service).returnTaskToExecution("alice", "assistant", chat.id(), 7);
+        mvc.perform(post(path).principal(()->"alice").contentType("application/json").content("{\"version\":6}"))
+                .andExpect(status().isConflict());
+        mvc.perform(post(path).principal(()->"alice").contentType("application/json").content("{\"version\":-1}"))
+                .andExpect(status().isBadRequest());
+    }
     @Test void validatesMemoryEndpointsVersionsAndStreamsMemoryPhaseWithoutExposingPrompts() throws Exception {
-        var registry = new AgentRegistry((d, messages) -> MemoryLayersTest.reply(
+        var registry = MemoryLayersTest.strictRegistry((d, messages) -> MemoryLayersTest.reply(
                 d.systemPrompt().equals(d.lifecycle().guardPrompt()) ? "{\"result\":\"ALLOW\",\"violation\":null}"
                         : d.systemPrompt().equals(d.memoryLayers().questionsPrompt()) ? "{\"questions\":[]}"
-                        : MemoryLayersTest.extraction(d) ? MemoryLayersTest.EXTRACT : "ok"), "classpath:agents/*.yaml");
+                        : MemoryLayersTest.extraction(d) ? MemoryLayersTest.EXTRACT : "ok"));
         var service = new ChatService(registry, new FileChatRepository(directory.resolve("chats").toString()),
                 new FileLongTermMemoryRepository(directory.resolve("memory").toString()));
         var controller = new AgentController(service);

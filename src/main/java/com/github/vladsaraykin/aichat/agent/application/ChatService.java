@@ -56,13 +56,17 @@ public class ChatService {
         return advanceTask(ChatRepository.LEGACY_OWNER, agentId, chatId, version);
     }
     public Chat advanceTask(String ownerId, String agentId, UUID chatId, long version) {
-        return mutateTask(ownerId, agentId, chatId, version, MemoryService::advance);
+        return mutateTask(ownerId, agentId, chatId, version,
+                memory -> MemoryService.advance(memory, registry.get(agentId).definition().lifecycle().advisory()));
     }
     public Chat pauseTask(String ownerId, String agentId, UUID chatId, long version) {
         return mutateTask(ownerId, agentId, chatId, version, MemoryService::pause);
     }
     public Chat resumeTask(String ownerId, String agentId, UUID chatId, long version) {
         return mutateTask(ownerId, agentId, chatId, version, MemoryService::resume);
+    }
+    public Chat returnTaskToExecution(String ownerId, String agentId, UUID chatId, long version) {
+        return mutateTask(ownerId, agentId, chatId, version, MemoryService::returnToExecution);
     }
     public Chat putInvariant(String ownerId, String agentId, UUID chatId, long version,
                              TaskInvariants.Entry entry) {
@@ -269,6 +273,9 @@ public class ChatService {
             if (chat.readOnly()) {
                 throw new ChatFailure(ChatFailure.Kind.INVALID, "Этот диалог сохранён как checkpoint. Выберите ветку для продолжения.");
             }
+            if (chat.workingMemory().status() == WorkingMemory.Status.PAUSED) {
+                throw new ChatFailure(ChatFailure.Kind.INVALID, "Задача на паузе. Продолжите её перед отправкой сообщения.");
+            }
             ContextStrategy strategy = ContextStrategy.forType(chat.strategy());
             boolean projectHelp = context != null && context.projectHelp();
             boolean mcpOnly = context != null && context.mcpOnly();
@@ -292,14 +299,17 @@ public class ChatService {
                         log.warn("agent_memory_update_skipped agentId={} chatId={} requestId={} kind={}",
                                 agentId, chatId, messageId, failure.kind());
                         String warning = "Ответ будет подготовлен с прежней памятью задачи. "
-                                + "Память не обновлена; проверьте или измените её вручную в инспекторе задачи.";
+                                + (agent.definition().lifecycle().advisory()
+                                    ? "Память не обновлена; продолжайте обсуждение в чате."
+                                    : "Память не обновлена; проверьте или измените её вручную в инспекторе задачи.");
                         if (prepared.warning() != null && !prepared.warning().isBlank()) {
                             warning = prepared.warning() + " " + warning;
                         }
                         return Mono.just(new Prepared(prepared.chat(), warning, true));
                     }));
             final Mono<Prepared> finalPreparation = preparation;
-            boolean lifecycleActive = !externalReadRequest && agent.definition().lifecycle().enabled() && layered;
+            boolean lifecycleActive = !externalReadRequest && agent.definition().lifecycle().enabled()
+                    && !agent.definition().lifecycle().advisory() && layered;
             boolean invariantActive = !externalReadRequest && agent.definition().invariants().enabled() && !chat.invariants().entries().isEmpty();
             boolean guardActive = lifecycleActive || invariantActive;
             Flux<StreamEvent> guarded;

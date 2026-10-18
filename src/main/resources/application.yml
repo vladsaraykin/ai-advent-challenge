@@ -30,6 +30,11 @@ spring:
               args:
                 - ${MCP_PROJECT_GIT_ENTRYPOINT:mcp/project-git/server.mjs}
                 - ${MCP_PROJECT_GIT_ROOT:.}
+            project-files:
+              command: ${MCP_PROJECT_FILES_COMMAND:node}
+              args:
+                - ${MCP_PROJECT_FILES_ENTRYPOINT:mcp/project-files/server.mjs}
+                - ${MCP_PROJECT_FILES_ROOT:.}
             excel:
               command: ${MCP_EXCEL_COMMAND:uv}
               args:
@@ -44,6 +49,9 @@ spring:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
 
 app:
+  mcp:
+    max-distinct-calls: ${MCP_MAX_DISTINCT_CALLS:256}
+    max-callback-attempts: ${MCP_MAX_CALLBACK_ATTEMPTS:1024}
   review:
     enabled: ${AI_REVIEW_ENABLED:true}
     repository: ${AI_REVIEW_REPOSITORY:vladsaraykin/ai-advent-challenge}

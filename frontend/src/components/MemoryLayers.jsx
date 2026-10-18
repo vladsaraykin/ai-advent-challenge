@@ -23,9 +23,13 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
   const [busy, setBusy] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const [taskEdit, setTaskEdit] = useState(null)
+  const [completionVersion, setCompletionVersion] = useState(null)
   const [entryEdit, setEntryEdit] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const working = chat?.workingMemory
+  const advisory = agent.advisoryWorkflow === true
+  const stageActions = advisory ? { REQUIREMENTS: 'Отметить: выполнение', DESIGN: 'Отметить: проверка', REVIEW: 'Подтвердить завершение' } : actions
+  useEffect(() => { setCompletionVersion(null); setTaskEdit(null) }, [chat?.id, working?.version])
   useEffect(() => {
     let active = true
     setMemory(null)
@@ -52,12 +56,13 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
     } catch (e) { setError(e.message) }
     finally { setBusy(false); onBusy(false) }
   }
-  function editTask() {
+  function editTask(focusField) {
     setTaskEdit({ version: working?.version || 0, projectKey: working?.projectKey || '', goal: working?.goal || '',
       requirements: JSON.stringify(working?.requirements || {}, null, 2),
       constraints: JSON.stringify(working?.constraints || {}, null, 2),
       terms: JSON.stringify(working?.terms || {}, null, 2),
-      decisions: JSON.stringify(working?.decisions || {}, null, 2), openQuestions: (working?.openQuestions || []).join('\n') })
+      decisions: JSON.stringify(working?.decisions || {}, null, 2), openQuestions: (working?.openQuestions || []).join('\n'),
+      focusField })
   }
   const entries = memory?.entries || []
   const proposals = (working?.proposals || []).filter(p => !(memory?.resolvedProposals || []).includes(p.id) && !entries.some(e => e.id === p.id))
@@ -76,11 +81,14 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
       <p>Окно контекста не удаляет историю в Sliding Window и Sticky Facts. Summary заменяет старый текст пересказом.</p>
     </details>
     <details open><summary>2. Рабочая — Task State Machine</summary>
+      {advisory && <p>Мягкий режим: этапы и поля памяти не блокируют работу. Продолжайте задачу в чате.
+        Уточняющие вопросы ассистент задаёт там же — отвечайте обычным сообщением.
+        Редактирование памяти и отметки прогресса необязательны. Пауза и разрешения MCP сохраняются.</p>}
       <div className="task-state-card" aria-label="Состояние задачи">
         <p><strong>Этап:</strong> {stages[working?.stage] || stages.REQUIREMENTS}</p>
         <p><strong>Статус:</strong> {working?.status === 'PAUSED' ? 'На паузе' : 'Активна'}</p>
-        <p><strong>Текущий шаг:</strong> {working?.currentStep || 'Определить цель задачи'}</p>
-        <p><strong>Ожидаемое действие:</strong> {expectedActions[working?.expectedAction] || 'Опишите цель задачи'}</p>
+        <p><strong>Текущий шаг:</strong> {advisory ? 'Обсуждение и выполнение задачи в чате' : working?.currentStep || 'Определить цель задачи'}</p>
+        <p><strong>Ожидаемое действие:</strong> {advisory ? (working?.status === 'PAUSED' ? 'Продолжите задачу' : 'Продолжайте диалог; заполнять память не требуется') : expectedActions[working?.expectedAction] || 'Опишите цель задачи'}</p>
         <small>Версия состояния: {working?.version || 0}</small>
       </div>
       <p>Проект: {working?.projectKey || 'не выбран — знания других проектов не используются'}</p>
@@ -88,13 +96,25 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
       {Object.entries(taskFields).map(([field, title]) => <div key={field}><h3>{title}</h3>
         {Object.entries(working?.[field] || {}).length ? <dl>{Object.entries(working[field]).map(([key, value]) =>
           <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : <p>Пока нет</p>}</div>)}
-      <h3>Открытые вопросы</h3>
+      <h3>{advisory ? 'Уточнения из диалога — ответьте в чате' : 'Открытые вопросы'}</h3>
       {working?.openQuestions?.length ? <ul>{working.openQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul> : <p>Нет сохранённых вопросов</p>}
+      {!advisory && (working?.stage || 'REQUIREMENTS') === 'REQUIREMENTS' && !Object.keys(working?.requirements || {}).length && <p>
+        Требования пока не сохранены. Цель и требования — разные поля.
+        Нажмите «Добавить требования», заполните «Уточнения и требования» и сохраните задачу.
+        Служебная просьба подтвердить план не является вопросом по задаче.</p>}
       <div className="task-actions" role="group" aria-label="Управление состоянием задачи">
-        <button type="button" disabled={blocked || readOnly} onClick={editTask}>Изменить данные задачи</button>
-        {actions[working?.stage || 'REQUIREMENTS'] && <button type="button" disabled={blocked || readOnly || working?.status === 'PAUSED'}
-          onClick={() => run(async () => onChat(await api.advanceTask(agent.id, chat.id, working?.version || 0)))}>
-          {actions[working?.stage || 'REQUIREMENTS']}</button>}
+        <button type="button" disabled={blocked || readOnly} onClick={() => editTask()}>Изменить данные задачи</button>
+        {!advisory && (working?.stage || 'REQUIREMENTS') === 'REQUIREMENTS' && !Object.keys(working?.requirements || {}).length &&
+          <button type="button" disabled={blocked || readOnly} onClick={() => editTask('requirements')}>Добавить требования</button>}
+        {!advisory && working?.stage === 'DESIGN' && <button type="button" disabled={blocked || readOnly} onClick={() => editTask('decisions')}>Зафиксировать решения</button>}
+        {stageActions[working?.stage || 'REQUIREMENTS'] && <button type="button" disabled={blocked || readOnly || working?.status === 'PAUSED'}
+          onClick={() => working?.stage === 'REVIEW' ? setCompletionVersion(working.version)
+            : run(async () => onChat(await api.advanceTask(agent.id, chat.id, working?.version || 0)))}>
+          {stageActions[working?.stage || 'REQUIREMENTS']}</button>}
+        {['REVIEW', 'DONE'].includes(working?.stage) && <button type="button"
+          disabled={blocked || readOnly || working?.status === 'PAUSED'}
+          onClick={() => run(async () => onChat(await api.returnTaskToExecution(agent.id, chat.id, working.version)))}>
+          Вернуть в выполнение</button>}
         {working?.status === 'PAUSED'
           ? <button type="button" disabled={blocked || readOnly}
             onClick={() => run(async () => onChat(await api.resumeTask(agent.id, chat.id, working?.version || 0)))}>Продолжить задачу</button>
@@ -104,9 +124,24 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
         {notice && <p role="status">{notice}</p>}
         {error && <div role="alert">{error}</div>}
       </div>
+      {completionVersion !== null && <div role="group" aria-label="Подтверждение завершения задачи">
+        <p>Результат выполнен и проверен? Этот переход завершает задачу, а не сохраняет решения и не разрешает запись файла.
+          Если работа ещё нужна, отмените завершение и нажмите «Вернуть в выполнение».</p>
+        <button type="button" disabled={blocked || readOnly || working?.status === 'PAUSED'}
+          onClick={() => run(async () => {
+            onChat(await api.advanceTask(agent.id, chat.id, completionVersion)); setCompletionVersion(null)
+          })}>Результат проверен — завершить задачу</button>
+        <button type="button" disabled={busy} onClick={() => setCompletionVersion(null)}>Отменить завершение</button>
+      </div>}
+      {!advisory && working?.stage === 'DESIGN' && <p>«Зафиксировать решения» открывает данные задачи. Заполните «Подтверждённые решения»
+        и нажмите «Сохранить задачу» — это не завершает её. Когда работа выполнена, передайте результат на проверку.
+        Настройки чата и долговременную память для этого менять не нужно.</p>}
+      {advisory && working?.stage === 'DONE' && <p>Отметка Done не закрывает диалог. Можно сразу отправить продолжение задачи в чате.</p>}
+      {!advisory && working?.stage === 'DONE' && <p>Задача завершена. Для доработки нажмите «Вернуть в выполнение»:
+        история, решения и память сохранятся. Создавать новый чат не требуется.</p>}
       {!chat && <p>Сначала отправьте сообщение, чтобы создать задачу.</p>}
       <p>Переходы выполняет приложение. LLM обновляет данные, но не может изменить этап. После паузы вся история и память сохраняются.</p>
-      {agent.lifecycle && <p>Контроль этапов включён: запрос и черновик ответа проверяются до показа.
+      {agent.lifecycle && !advisory && <p>Контроль этапов включён: запрос и черновик ответа проверяются до показа.
         Реализация доступна только после подтверждения требований, а завершение — после Validation.</p>}
       {!!chat?.lifecycle?.usage?.calls && <p>Проверка жизненного цикла: {chat.lifecycle.usage.calls} выз. ·
         вход {formatTokens(chat.lifecycle.usage.promptTokens)} · выход {formatTokens(chat.lifecycle.usage.completionTokens)} ·
@@ -121,7 +156,7 @@ export default function MemoryLayers({ agent, chat, api, disabled, onChat, onBus
           onChange={e => setTaskEdit({ ...taskEdit, projectKey: e.target.value })} /></label>
         <label>Цель задачи<textarea maxLength={1000} value={taskEdit.goal} onChange={e => setTaskEdit({ ...taskEdit, goal: e.target.value })} /></label>
         {Object.entries(taskFields).map(([field, title]) => <label key={field}>{title} (JSON-словарь строк)
-          <textarea rows={4} value={taskEdit[field]} onChange={e => setTaskEdit({ ...taskEdit, [field]: e.target.value })} /></label>)}
+          <textarea rows={4} autoFocus={taskEdit.focusField === field} value={taskEdit[field]} onChange={e => setTaskEdit({ ...taskEdit, [field]: e.target.value })} /></label>)}
         <label>Открытые вопросы (по одному на строку)<textarea value={taskEdit.openQuestions}
           onChange={e => setTaskEdit({ ...taskEdit, openQuestions: e.target.value })} /></label>
         <button disabled={blocked} type="submit">Сохранить задачу</button>

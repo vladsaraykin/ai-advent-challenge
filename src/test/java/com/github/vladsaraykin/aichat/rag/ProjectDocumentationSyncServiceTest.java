@@ -56,6 +56,8 @@ class ProjectDocumentationSyncServiceTest {
         Files.writeString(root.resolve("src/main/java/example/.env"), "SECRET=value");
         Files.createDirectories(root.resolve("target"));
         Files.writeString(root.resolve("target/Generated.java"), "ignored");
+        Files.createDirectories(root.resolve("mcp/project-files"));
+        Files.writeString(root.resolve("mcp/project-files/server.mjs"), "// bounded project tools");
         var documents = mock(DocumentService.class);
         var indexing = mock(ProjectDocumentIndexer.class);
         var manifest = mock(ProjectDocumentSyncRepository.class);
@@ -70,8 +72,9 @@ class ProjectDocumentationSyncServiceTest {
         });
         when(indexing.start(eq("vlad"), any(), any())).thenAnswer(call -> run());
         new ProjectDocumentationSyncService(root, "vlad", documents, indexing, manifest, true).synchronize();
-        verify(documents, times(2)).upload(eq("vlad"), anyString(), any());
+        verify(documents, times(3)).upload(eq("vlad"), anyString(), any());
         verify(manifest).pending(eq("vlad"), eq("src/main/java/example/Example.java"), anyString(), any(), any());
+        verify(manifest).pending(eq("vlad"), eq("mcp/project-files/server.mjs"), anyString(), any(), any());
     }
 
     @Test void queuesOnlyAllowlistedMarkdownSources() throws Exception {

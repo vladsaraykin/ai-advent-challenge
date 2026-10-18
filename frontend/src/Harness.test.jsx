@@ -17,6 +17,78 @@ const apiFixture = () => ({
 })
 beforeEach(() => localStorage.clear())
 
+it('restores file mode and keeps followups out of RAG until an explicit chat command', async () => {
+  const api = apiFixture()
+  api.chatSettings.mockResolvedValue({ ...settings, mcpServerIds: ['project-files'] })
+  api.mcpServers.mockResolvedValue([{ id: 'project-files', name: 'Project files', connected: true, tools: [{}] }])
+  api.pendingRequest.mockResolvedValue({ mode: 'FILES' })
+  api.sendStream.mockImplementation(async (_a, _c, request, handlers) => {
+    handlers.request_context({ mode: request.content.startsWith('/chat') ? 'CHAT' : 'FILES', ragEnabled: false })
+    handlers.completed({ chat })
+  })
+  render(<App api={api} />)
+  await screen.findByText('Сохранённая полная история')
+  expect(screen.getByText(/Файловый режим MCP/)).toBeVisible()
+  expect(screen.getByRole('checkbox', { name: 'RAG', exact: true })).toBeDisabled()
+  expect(screen.getByRole('checkbox', { name: 'RAG', exact: true })).toBeChecked()
+  await userEvent.type(screen.getByLabelText('Ваше сообщение'), 'Приступай')
+  await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+  await waitFor(() => expect(api.sendStream).toHaveBeenCalledOnce())
+  await waitFor(() => expect(screen.getByLabelText('Ваше сообщение')).toBeEnabled())
+  await userEvent.type(screen.getByLabelText('Ваше сообщение'), '/chat Вопрос по документам')
+  await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+  await waitFor(() => expect(screen.getByText('Все мои документы · строгие источники')).toBeVisible())
+  expect(api.saveChatSettings).not.toHaveBeenCalled()
+  expect(api.sendStream.mock.calls[0][2].content).toBe('Приступай')
+})
+
+it('sends persistent permission only when the user selects the chat-wide approval button', async () => {
+  const api = apiFixture()
+  api.pendingRequest.mockResolvedValue({ request: { status: 'AWAITING_APPROVAL', context: { messageId: 'request-a', content: 'Найди API' } },
+    calls: [{ id: 'call-a', server: 'files', tool: 'read', input: '{}', status: 'AWAITING_APPROVAL', toolSignature: 'hash' }] })
+  api.approveTool.mockImplementation(async (_a, _c, _r, _body, handlers) => handlers.completed({ chat }))
+  render(<App api={api} />)
+  await screen.findByText('Сохранённая полная история', {}, { timeout: 5000 })
+  await userEvent.click(screen.getByRole('button', { name: 'Разрешить инструмент в этом чате' }))
+  await waitFor(() => expect(api.approveTool).toHaveBeenCalledWith('assistant', 'chat-a', 'request-a',
+    { callId: 'call-a', allow: true, remember: true }, expect.any(Object)))
+})
+
+it('requires explicit files-server selection and saves it before sending without discarding the draft', async () => {
+  const api = apiFixture()
+  api.chatSettings.mockResolvedValue({ ...settings, mcpServerIds: ['files', 'ai-advent-project-files'] })
+  api.mcpServers.mockResolvedValue([{ id: 'project-files', name: 'Project Files MCP', connected: true, tools: [{ name: 'project_read_files' }] }])
+  api.sendStream.mockImplementation(async (_agent, _chat, _request, handlers) => handlers.completed({ chat }))
+  render(<App api={api} />)
+  await screen.findByText('Сохранённая полная история')
+  const content = '/files Найди реализацию поиска диалогов'
+  await userEvent.type(screen.getByLabelText('Ваше сообщение'), content)
+  expect(screen.getByRole('region', { name: 'Подключение файлового MCP' })).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+  expect(api.sendStream).not.toHaveBeenCalled()
+  expect(api.saveChatSettings).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('Ваше сообщение')).toHaveValue(content)
+  await userEvent.click(screen.getByRole('button', { name: 'Выбрать project-files для чата' }))
+  await waitFor(() => expect(api.saveChatSettings).toHaveBeenCalledWith('assistant', 'chat-a', {
+    ...settings, mcpServerIds: ['files', 'project-files']
+  }))
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Подключение файлового MCP' })).not.toBeInTheDocument())
+  await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+  await waitFor(() => expect(api.sendStream).toHaveBeenCalledOnce())
+  expect(api.sendStream.mock.calls[0][2]).toMatchObject({ content, mcpServerIds: ['files', 'project-files'] })
+})
+
+it('explains missing files discovery without silently enabling a different filesystem server', async () => {
+  const api = apiFixture()
+  render(<App api={api} />)
+  await screen.findByText('Сохранённая полная история')
+  await userEvent.type(screen.getByLabelText('Ваше сообщение'), '/files Найди API')
+  const hint = screen.getByRole('region', { name: 'Подключение файлового MCP' })
+  expect(within(hint).getByText(/Подключение project-files недоступно/)).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Выбрать project-files для чата' })).not.toBeInTheDocument()
+  expect(api.saveChatSettings).not.toHaveBeenCalled()
+})
+
 it('keeps chat properties in the inspector and usage below the composer', async () => {
   const api = apiFixture()
   api.chat.mockResolvedValue({ ...chat, messages: [{ id: 'answer', role: 'ASSISTANT', content: 'Ответ',

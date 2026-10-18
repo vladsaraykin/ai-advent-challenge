@@ -53,6 +53,24 @@ it('closes command suggestions on Escape', async () => {
   expect(screen.queryByRole('listbox', { name: 'Команды чата' })).not.toBeInTheDocument()
 })
 
+it('offers an explicit exit from file mode without losing the user draft', async () => {
+  const user = userEvent.setup()
+  const { onChange, onSubmit } = setup()
+  await user.type(screen.getByRole('textbox', { name: 'Ваше сообщение' }), '/ch')
+  await user.click(screen.getByRole('option', { name: /\/chat.*Завершить файловый режим/ }))
+  expect(onChange).toHaveBeenLastCalledWith('/chat ')
+  expect(onSubmit).not.toHaveBeenCalled()
+})
+
+it('offers live file operations by goal through /files', async () => {
+  const user = userEvent.setup()
+  const { onChange, onSubmit } = setup()
+  await user.type(screen.getByRole('textbox', { name: 'Ваше сообщение' }), '/f')
+  await user.click(screen.getByRole('option', { name: /\/files.*проанализировать файлы/i }))
+  expect(onChange).toHaveBeenLastCalledWith('/files ')
+  expect(onSubmit).not.toHaveBeenCalled()
+})
+
 it('opens model and supported reasoning choices through /model without submitting a chat message', async () => {
   const user = userEvent.setup()
   const onSubmit = vi.fn(event => event.preventDefault())

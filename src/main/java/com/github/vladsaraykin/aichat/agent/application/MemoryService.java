@@ -16,6 +16,15 @@ public final class MemoryService {
         return new TaskData(proposed.goal(),proposed.requirements(),proposed.constraints(),proposed.decisions(),known,proposed.terms());
     }
     private static final TaskStateMachine STATE_MACHINE = new TaskStateMachine();
+    private static final java.util.regex.Pattern PLAN_APPROVAL = java.util.regex.Pattern.compile(
+            "(?iu)^(?:пожалуйста[, ]*\\s*)?(?:подтвердите|подтверди|подтверждаете|согласуйте|утвердите)"
+                    + "(?:,?\\s+пожалуйста)?\\s+(?:(?:этот|данный|предложенный|наш)\\s+)?"
+                    + "(?:план(?:\\s+(?:работы|действий|задачи))?|требования)"
+                    + "(?:\\s*[,;]?\\s*(?:или|либо)\\s+(?:внесите|внеси|предложите|укажите)"
+                    + "\\s+(?:(?:свои|необходимые)\\s+)?(?:правки|изменения|корректировки))?[.!?…]*$");
+    private static final java.util.regex.Pattern ENGLISH_PLAN_APPROVAL = java.util.regex.Pattern.compile(
+            "(?iu)^(?:please\\s+)?(?:confirm|approve)\\s+(?:(?:this|the|proposed)\\s+)?(?:plan|requirements)"
+                    + "(?:\\s+or\\s+(?:suggest|provide|make)\\s+(?:changes|edits|corrections))?[.!?]*$");
     private static final java.util.regex.Pattern TEMPORARY_GOAL_SUFFIX = java.util.regex.Pattern.compile(
             "(?iu)\\s*(?:,|;)?\\s*(?:и\\s+)?(?:без\\s+начала\\s+(?:реализации|разработки)|"
                     + "(?:реализацию|разработку|код|деплой)\\s+пока\\s+не\\s+(?:начинать|выполнять))"
@@ -68,11 +77,16 @@ public final class MemoryService {
         boolean uiCommand = (normalized.contains("панел") || normalized.contains("кнопк"))
                 && (normalized.contains("подтверд") || normalized.contains("продолж")
                 || normalized.contains("постав") || normalized.contains("нажм"));
-        return stageCommand || uiCommand;
+        return stageCommand || uiCommand || PLAN_APPROVAL.matcher(normalized).matches()
+                || ENGLISH_PLAN_APPROVAL.matcher(normalized).matches();
     }
     public static WorkingMemory advance(WorkingMemory memory) {
+        return advance(memory, false);
+    }
+    public static WorkingMemory advance(WorkingMemory memory, boolean advisory) {
         memory = withoutTemporaryWorkflow(memory);
-        return STATE_MACHINE.transition(memory, memory, TaskStateMachine.Event.CONFIRM_CURRENT_STAGE);
+        return STATE_MACHINE.transition(memory, memory, advisory ? TaskStateMachine.Event.CONFIRM_PROGRESS
+                : TaskStateMachine.Event.CONFIRM_CURRENT_STAGE);
     }
     public static WorkingMemory pause(WorkingMemory memory) {
         memory = withoutTemporaryWorkflow(memory);
@@ -81,6 +95,9 @@ public final class MemoryService {
     public static WorkingMemory resume(WorkingMemory memory) {
         memory = withoutTemporaryWorkflow(memory);
         return STATE_MACHINE.transition(memory, memory, TaskStateMachine.Event.RESUME);
+    }
+    public static WorkingMemory returnToExecution(WorkingMemory memory) {
+        return STATE_MACHINE.transition(memory, memory, TaskStateMachine.Event.RETURN_TO_EXECUTION);
     }
 
     /** Stage-scoped workflow commands are control input, not durable task requirements. */
@@ -104,14 +121,16 @@ public final class MemoryService {
 
     private static TaskData sanitize(TaskData data) {
         return new TaskData(sanitizeGoal(data.goal()), durable(data.requirements()), durable(data.constraints()),
-                durable(data.decisions()), data.openQuestions(), data.terms());
+                durable(data.decisions()), data.openQuestions() == null ? List.of()
+                    : data.openQuestions().stream().filter(question -> !isWorkflowInstruction(question)).toList(), data.terms());
     }
 
     private static WorkingMemory withoutTemporaryWorkflow(WorkingMemory memory) {
         var sanitized = sanitize(new TaskData(memory.goal(), memory.requirements(), memory.constraints(),
                 memory.decisions(), memory.openQuestions()));
         if (memory.goal().equals(sanitized.goal()) && memory.requirements().equals(sanitized.requirements())
-                && memory.constraints().equals(sanitized.constraints()) && memory.decisions().equals(sanitized.decisions())) {
+                && memory.constraints().equals(sanitized.constraints()) && memory.decisions().equals(sanitized.decisions())
+                && memory.openQuestions().equals(sanitized.openQuestions())) {
             return memory;
         }
         return new WorkingMemory(memory.version(), memory.stage(), memory.projectKey(), sanitized.goal(),

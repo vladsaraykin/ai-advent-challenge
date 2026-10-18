@@ -54,6 +54,8 @@ public class MemoryController {
             @Valid @RequestBody Version request) { return service.pauseTask(owner(principal), agentId, chatId, request.version()); }
     @PostMapping("/chats/{chatId}/task/resume") public Chat resume(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId,
             @Valid @RequestBody Version request) { return service.resumeTask(owner(principal), agentId, chatId, request.version()); }
+    @PostMapping("/chats/{chatId}/task/return-to-execution") public Chat returnToExecution(Principal principal, @PathVariable String agentId, @PathVariable UUID chatId,
+            @Valid @RequestBody Version request) { return service.returnTaskToExecution(owner(principal), agentId, chatId, request.version()); }
     @PutMapping("/chats/{chatId}/invariants/{id}") public Chat putInvariant(Principal principal,
             @PathVariable String agentId, @PathVariable UUID chatId, @PathVariable UUID id,
             @Valid @RequestBody InvariantEdit request) {

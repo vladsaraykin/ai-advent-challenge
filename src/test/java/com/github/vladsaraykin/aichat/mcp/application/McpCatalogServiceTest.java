@@ -69,11 +69,24 @@ class McpCatalogServiceTest {
         var result = new McpCatalogService(provider(List.of()), false).servers();
 
         assertThat(result).extracting("id")
-                .contains("filesystem", "project-git", "excel");
+                .contains("filesystem", "project-git", "project-files", "excel");
         assertThat(result).allSatisfy(server -> {
             assertThat(server.connected()).isFalse();
             assertThat(server.error()).contains("MCP_ENABLED=true");
         });
+    }
+
+    @Test
+    void filesServerDiscoveryUsesExactlyTheIdRequiredByFilesCommand() {
+        var client = mock(McpSyncClient.class);
+        when(client.getServerInfo()).thenReturn(implementation("ai-advent-project-files", null, "1.0.0"));
+        when(client.isInitialized()).thenReturn(true);
+        when(client.listTools()).thenReturn(new McpSchema.ListToolsResult(List.of(), null, Map.of()));
+        var result = new McpCatalogService(provider(List.of(client)), true).servers().getFirst();
+        assertThat(result.id()).isEqualTo("project-files");
+        var preferences = new com.github.vladsaraykin.aichat.harness.domain.ChatSettings(0, false, List.of(result.id()), null);
+        assertThat(com.github.vladsaraykin.aichat.harness.application.ProjectFilesCommand.snapshot(preferences).mcpServerIds())
+                .containsExactly("project-files");
     }
 
     @Test

@@ -56,10 +56,13 @@ describe('SSE chat API', () => {
     vi.stubGlobal('fetch', fetch)
     await agentApi.pauseTask('architect', 'one', 4)
     await agentApi.resumeTask('architect', 'one', 5)
+    await agentApi.returnTaskToExecution('architect', 'one', 6)
     expect(fetch.mock.calls[0][0]).toBe('/api/agents/architect/chats/one/task/pause')
     expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST', body: '{"version":4}' })
     expect(fetch.mock.calls[1][0]).toBe('/api/agents/architect/chats/one/task/resume')
     expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'POST', body: '{"version":5}' })
+    expect(fetch.mock.calls[2][0]).toBe('/api/agents/architect/chats/one/task/return-to-execution')
+    expect(fetch.mock.calls[2][1]).toMatchObject({ method: 'POST', body: '{"version":6}' })
   })
 
   it('parses events split across network chunks and preserves text whitespace', async () => {
