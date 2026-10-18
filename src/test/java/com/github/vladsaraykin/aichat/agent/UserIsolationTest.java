@@ -25,7 +25,7 @@ class UserIsolationTest {
         UserRepository users = new UserRepository() {
             @Override public Optional<UserAccount> account(String username) { return Optional.empty(); }
             @Override public UserProfile profile(String username) {
-                return new UserProfile(username, username, username.equals("alice") ? "ALICE_STYLE" : "BOB_STYLE",
+                return new UserProfile(username, username, null, username.equals("alice") ? "ALICE_STYLE" : "BOB_STYLE",
                         "Markdown", List.of("Не использовать emoji"), 0, Instant.now());
             }
             @Override public UserProfile create(UserAccount a, UserProfile p) { throw new UnsupportedOperationException(); }
