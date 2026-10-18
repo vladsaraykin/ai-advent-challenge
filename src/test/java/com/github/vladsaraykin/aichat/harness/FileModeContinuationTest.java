@@ -14,6 +14,17 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class FileModeContinuationTest {
+    @Test void branchQuestionInsideFileTaskUsesTheTaskCheckoutNotMain() throws Exception {
+        try(var f=new Fixture()) {
+            when(f.settings.get("alice","assistant",f.chat.id())).thenReturn(
+                    new ChatSettings(0,true,List.of("project-files","project-git"),null));
+            when(f.requests.latestCompleted("alice","assistant",f.chat.id())).thenReturn(Optional.of(f.view(f.context("/files Task",true),"COMPLETED")));
+            f.send("Какая сейчас текущая git-ветка?");
+            assertThat(f.prepared.get().fileOperations()).isTrue();
+            assertThat(f.prepared.get().mcpOnly()).isFalse();
+            assertThat(f.prepared.get().settings().mcpServerIds()).containsExactly("project-files","project-git");
+        }
+    }
     @Test void unprefixedFollowupInheritsFilesModeWithoutChangingStoredRagOrOtherServers() throws Exception {
         try(var f=new Fixture()) {
             var previous=f.context("/files Найди реализацию",true);

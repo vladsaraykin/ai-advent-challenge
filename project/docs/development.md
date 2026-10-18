@@ -59,6 +59,25 @@ Maven собирает фронтенд и включает его ресурс�
 tests должны запускаться только против выделенной тестовой базы. См. команды
 `RAG_TEST_DATABASE_*` в основном README.
 
+### PostgreSQL-тесты через Docker
+
+```bash
+docker pull pgvector/pgvector:0.8.6-pg16-trixie
+node automation/postgres-tests.mjs
+# При разработке — только связанные integration-тесты:
+node automation/postgres-tests.mjs -Dtest=ProjectWorkspacePostgresTest,McpPermissionsPostgresTest
+```
+
+Скрипт создаёт собственный Docker-контейнер PostgreSQL 16/pgvector с одноразовыми
+данными в tmpfs, случайным паролем и случайным портом только на 127.0.0.1. Создаются
+отдельные свежие базы rag_test, workspace_test, permissions_test и review_test;
+URL тестов всегда формируются скриптом, рабочие адреса из окружения не используются.
+После тестов контейнер останавливается и удаляется (`--rm`), существующие контейнеры,
+volumes и PostgreSQL на хосте не затрагиваются. Нужен запущенный Docker daemon.
+Внешние Ollama/provider opt-in переменные очищаются: эти проверки не расходуют API.
+MCP/workspace suites отказываются работать с уже существующей схемой rag.
+Локально установленные initdb/pg_ctl для этих тестов не нужны.
+
 ## Конфигурационные точки
 
 - `src/main/resources/application.yml` — адреса зависимостей, таймауты и пределы;

@@ -11,14 +11,15 @@ const hash = text => createHash('sha256').update(text).digest('hex');
 
 /** Deliberately no shell, arbitrary commands, deletion, or application-data access. */
 export class Workspace {
-  constructor(root) {
+  constructor(root, { sourceEditing = false } = {}) {
     this.root = fs.realpathSync(root);
+    this.sourceEditing = sourceEditing;
   }
 
-  path(name, create = false) {
+  path(name, create = false, parents = false) {
     if (typeof name !== 'string' || !name || name.length > 300 || name.includes('\\') || /[\x00-\x1f\x7f]/.test(name)
-        || name.split('/').some(part => !part || part === '.' || part === '..') || sensitive.test(name)
-        || !extensions.has(extname(name))) throw new Error('path_not_allowed');
+        || name.split('/').some(part => !part || part === '.' || part === '..') || this.sensitive(name)
+        || (!this.sourceEditing && !extensions.has(extname(name)))) throw new Error('path_not_allowed');
     const absolute = resolve(this.root, name);
     if (!relative(this.root, absolute) || relative(this.root, absolute).startsWith(`..${sep}`)) throw new Error('path_not_allowed');
     // Check every component, not only the final file. Do not follow symlinks even inside the root.
@@ -29,6 +30,7 @@ export class Workspace {
       let stat;
       try { stat = fs.lstatSync(current); }
       catch (error) {
+        if (error.code === 'ENOENT' && create && parents) return absolute;
         if (error.code === 'ENOENT' && create && i === parts.length - 1) return absolute;
         if (error.code === 'ENOENT' && !create) throw new Error('file_not_found');
         throw new Error('file_unavailable');
@@ -39,13 +41,21 @@ export class Workspace {
     return absolute;
   }
 
+  sensitive(name) {
+    // Only explicitly supported hidden project configuration; never .git/.env/credentials.
+    const visible = this.sourceEditing ? name.replace(/^\.github\//, 'github/').replace(/^\.gitignore$/, 'gitignore.txt') : name;
+    return sensitive.test(visible);
+  }
+
   read(name) {
     const file = this.path(name);
     const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
     try {
       const stat = fs.fstatSync(fd);
       if (!stat.isFile() || stat.nlink !== 1 || stat.size > MAX_FILE_BYTES) throw new Error('file_too_large_or_not_regular');
-      const content = fs.readFileSync(fd, 'utf8');
+      let content;
+      try { content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(fs.readFileSync(fd)); }
+      catch { throw new Error('file_not_text'); }
       if (content.includes('\0') || Buffer.byteLength(content) > MAX_FILE_BYTES) throw new Error('file_not_text');
       return { path: name, exists: true, sha256: hash(content), content };
     } finally { fs.closeSync(fd); }
@@ -56,7 +66,7 @@ export class Workspace {
     const raw = execFileSync('git', ['-C', this.root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'],
       { encoding: 'utf8', timeout: 5000, maxBuffer: 2_000_000, stdio: ['ignore', 'pipe', 'pipe'] });
     const eligible = [...new Set(raw.split('\0').filter(Boolean))].sort().filter(name => name.startsWith(prefix)
-      && !sensitive.test(name) && extensions.has(extname(name)));
+      && !this.sensitive(name) && (this.sourceEditing || extensions.has(extname(name))));
     const files = [];
     for (const name of eligible.slice(0, 5000)) {
       try { this.path(name); files.push(name); } catch { /* Exclude symlinks, deleted and unsafe entries. */ }
@@ -117,13 +127,15 @@ export class Workspace {
   }
 
   preview(name, content, expectedSha256) {
-    if (!(name === 'README.md' || /^project\/docs\/(?:[^/]+\/)*[^/]+\.md$/.test(name))) throw new Error('write_path_not_allowed');
-    if (typeof content !== 'string' || !content.trim() || content.length > 6000 || content.includes('\0')) throw new Error('invalid_content');
+    if (!this.sourceEditing && !(name === 'README.md' || /^project\/docs\/(?:[^/]+\/)*[^/]+\.md$/.test(name))) throw new Error('write_path_not_allowed');
+    const limit = this.sourceEditing ? 128000 : 6000;
+    if (typeof content !== 'string' || (!this.sourceEditing && !content.trim()) || content.length > limit
+        || Buffer.byteLength(content) > MAX_FILE_BYTES || content.includes('\0')) throw new Error('invalid_content');
     const file = this.path(name, true);
     const exists = fs.existsSync(file);
     const old = exists ? this.read(name) : { content: '', sha256: null };
     if (expectedSha256 !== old.sha256) throw new Error('stale_file_read_again');
-    if (old.content.length > 6000) throw new Error('file_too_large_for_safe_replacement');
+    if (old.content.length > limit) throw new Error('file_too_large_for_safe_replacement');
     const lines = text => text === '' ? [] : text.replace(/\n$/, '').split('\n');
     const before = lines(old.content), after = lines(content);
     const diffLines = [`--- ${exists ? `a/${name}` : '/dev/null'}`, `+++ b/${name}`,
@@ -133,7 +145,52 @@ export class Workspace {
       if (text && !text.endsWith('\n')) diffLines.push('\\ No newline at end of file');
     }
     return { path: name, expectedSha256, sha256: hash(content), changed: old.content !== content || !exists,
-      diff: old.content === content && exists ? '' : diffLines.join('\n') + '\n' };
+      diff: old.content === content && exists ? '' : (diffLines.join('\n') + '\n').slice(0, 40000),
+      truncated: diffLines.join('\n').length > 40000 };
+  }
+
+  edit(name, edits, expectedSha256, save = false) {
+    if (!this.sourceEditing || !Array.isArray(edits) || !edits.length || edits.length > 30) throw new Error('invalid_edits');
+    const old = this.read(name);
+    if (old.sha256 !== expectedSha256) throw new Error('stale_file_read_again');
+    let content = old.content;
+    for (const { before, after } of edits) {
+      if (typeof before !== 'string' || !before || typeof after !== 'string' || content.split(before).length !== 2)
+        throw new Error('edit_must_match_exactly_once');
+      content = content.replace(before, () => after);
+    }
+    return save ? this.write(name, content, expectedSha256) : this.preview(name, content, expectedSha256);
+  }
+
+  create(name, content, save = false) {
+    if (!this.sourceEditing) throw new Error('write_path_not_allowed');
+    // Validate the complete name before creating any parents. No symlink traversal.
+    this.path(name, true, true);
+    if (!save) return { path: name, sha256: hash(content), expectedSha256: null,
+      diff: `--- /dev/null\n+++ b/${name}\n` + content.split('\n').map(line => '+' + line).join('\n') };
+    this.path(name, true, true);
+    fs.mkdirSync(dirname(resolve(this.root, name)), { recursive: true });
+    return this.write(name, content, null);
+  }
+
+  rename(name, destination, expectedSha256) {
+    if (!this.sourceEditing) throw new Error('write_path_not_allowed');
+    const old = this.read(name);
+    if (old.sha256 !== expectedSha256) throw new Error('stale_file_read_again');
+    this.path(destination, true, true);
+    const mode = fs.statSync(this.path(name)).mode & 0o777;
+    // Publish without overwriting an existing destination. Source is removed only on success.
+    const result = this.create(destination, old.content, true);
+    try { fs.chmodSync(this.path(destination), mode); this.remove(name, expectedSha256); }
+    catch { throw new Error('rename_result_uncertain'); }
+    return { ...result, renamedFrom: name };
+  }
+
+  remove(name, expectedSha256) {
+    if (!this.sourceEditing) throw new Error('write_path_not_allowed');
+    if (this.read(name).sha256 !== expectedSha256) throw new Error('stale_file_read_again');
+    fs.unlinkSync(this.path(name));
+    return { path: name, deleted: true };
   }
 
   write(name, content, expectedSha256) {

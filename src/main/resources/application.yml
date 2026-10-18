@@ -15,7 +15,7 @@ spring:
         name: ai-advent-mcp-client
         version: 1.0.0
         type: SYNC
-        request-timeout: ${MCP_REQUEST_TIMEOUT:20s}
+        request-timeout: ${MCP_REQUEST_TIMEOUT:180s}
         toolcallback:
           enabled: false
         stdio:

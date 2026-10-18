@@ -27,6 +27,8 @@ public class McpApprovalService {
     private final ChatRepository chats;
     private final McpCallBudget budget;
     private final org.springframework.beans.factory.ObjectProvider<AgentCatalog> agents;
+    private final ProjectWorkspaceStore workspaces;
+    private final Object[] workspaceLocks=java.util.stream.IntStream.range(0,64).mapToObj(i->new Object()).toArray();
     private final JsonMapper json=JsonMapper.builder().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build();
     public McpApprovalService(@Qualifier("ragJdbcTemplate") JdbcTemplate jdbc,
@@ -39,14 +41,21 @@ public class McpApprovalService {
                              HarnessRequestRepository requests,ChatRepository chats,McpCallBudget budget) {
         this(jdbc,transactions,requests,chats,budget,null);
     }
-    @org.springframework.beans.factory.annotation.Autowired
     public McpApprovalService(@Qualifier("ragJdbcTemplate") JdbcTemplate jdbc,
                              @Qualifier("ragTransactions") TransactionTemplate transactions,
                              HarnessRequestRepository requests,ChatRepository chats,McpCallBudget budget,
                              org.springframework.beans.factory.ObjectProvider<AgentCatalog> agents) {
+        this(jdbc,transactions,requests,chats,budget,agents,null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public McpApprovalService(@Qualifier("ragJdbcTemplate") JdbcTemplate jdbc,
+                             @Qualifier("ragTransactions") TransactionTemplate transactions,
+                             HarnessRequestRepository requests,ChatRepository chats,McpCallBudget budget,
+                             org.springframework.beans.factory.ObjectProvider<AgentCatalog> agents,ProjectWorkspaceStore workspaces) {
         this.jdbc=jdbc;this.transactions=transactions;this.requests=requests;this.chats=chats;
         this.budget=budget;
         this.agents=agents;
+        this.workspaces=workspaces;
     }
     public record Call(UUID id,String server,String tool,String input,String status,int ordinal,String result,String toolSignature) {
         public Call(UUID id,String server,String tool,String input,String status,int ordinal,String result) {
@@ -74,6 +83,8 @@ public class McpApprovalService {
             var target=jdbc.query("SELECT chat_id,server_id,tool_name,tool_signature FROM rag.mcp_calls WHERE owner_username=? AND message_id=? AND id=? AND status='AWAITING_APPROVAL' FOR UPDATE",
                     (rs,n)->new GrantTarget(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4)),owner,request,call)
                     .stream().findFirst().orElseThrow(()->new ChatFailure(ChatFailure.Kind.INVALID,"Подтверждение уже обработано или вызов не найден."));
+            if(remember && ProjectWorkspacePolicy.oneShot(target.server(),target.tool()))
+                throw new ChatFailure(ChatFailure.Kind.INVALID,"Удаление, push и PR требуют отдельного разового подтверждения.");
             if(remember && target.signature()==null)
                 throw new ChatFailure(ChatFailure.Kind.INVALID,"Для старого вызова доступно только разовое разрешение. Постоянное разрешение можно выдать в следующем запросе.");
             if(jdbc.update("UPDATE rag.mcp_calls SET status=? WHERE owner_username=? AND message_id=? AND id=? AND status='AWAITING_APPROVAL'",
@@ -111,11 +122,15 @@ public class McpApprovalService {
             public ToolMetadata getToolMetadata() { return delegate.getToolMetadata(); }
             public String call(String input) { return call(input,null); }
             public String call(String input,org.springframework.ai.chat.model.ToolContext toolContext) {
-                return invoke(context,server,getToolDefinition().name(),signature(getToolDefinition()),input,()->delegate.call(input,toolContext));
+                String tool=getToolDefinition().name();
+                synchronized(workspaceLocks[context.chatId().hashCode() & 63]) {
+                    return invoke(context,server,tool,signature(getToolDefinition()),input,
+                            effective->delegate.call(effective,toolContext));
+                }
             }
         };
     }
-    private String invoke(RequestContext context,String server,String tool,String signature,String raw,java.util.function.Supplier<String> action) {
+    private String invoke(RequestContext context,String server,String tool,String signature,String raw,java.util.function.Function<String,String> action) {
         if(!context.settings().mcpServerIds().contains(server)
                 || requests.find(context.owner(),context.messageId()).filter(r->r.status().equals("RUNNING")).isEmpty())
             throw new ChatFailure(ChatFailure.Kind.INVALID,"Запрос больше не активен или MCP-сервер не выбран.");
@@ -128,12 +143,17 @@ public class McpApprovalService {
         if(!advisory && !projectReadOnly && (current.stage()==com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Stage.REQUIREMENTS
                 || current.stage()==com.github.vladsaraykin.aichat.agent.domain.WorkingMemory.Stage.DONE))
             return "Инструмент не вызван: MCP-действия разрешены только на Execution/Validation. Предложи согласовать план или начать новую задачу.";
+        ProjectWorkspacePolicy.authorize(context,server,tool);
         if(raw==null || raw.length()>12000) throw new ChatFailure(ChatFailure.Kind.INVALID,"Параметры MCP слишком большие.");
         String input;
         try { var tree=json.readTree(raw);if(!tree.isObject()) throw new IllegalArgumentException();
-            input=json.writeValueAsString(json.readValue(raw,Map.class)); }
+            Map<String,Object> parameters=new TreeMap<>(json.readValue(raw,Map.class));
+            if(ProjectWorkspacePolicy.project(server)) { parameters.remove("workspaceId");parameters.remove("workspaceRevision"); }
+            input=json.writeValueAsString(parameters); }
         catch(RuntimeException e) { throw new ChatFailure(ChatFailure.Kind.INVALID,"Некорректные параметры MCP."); }
-        String hash=digest(input);
+        final boolean scoped=workspaces!=null && ProjectWorkspacePolicy.scoped(context,server,tool);
+        final String canonical=scoped ? workspaces.bind(context,tool,input) : input;
+        String hash=digest(canonical);
         Call call=transactions.execute(tx->{
             jdbc.queryForObject("SELECT id FROM rag.chats WHERE owner_username=? AND id=? FOR UPDATE",UUID.class,context.owner(),context.chatId());
             var existing=jdbc.queryForList("SELECT id FROM rag.mcp_calls WHERE owner_username=? AND message_id=? AND server_id=? AND tool_name=? AND input_hash=?",
@@ -142,17 +162,17 @@ public class McpApprovalService {
                 int ordinal=calls(context.owner(),context.messageId()).size()+1;
                 if(ordinal>budget.maxDistinctCalls()) return null;
                 jdbc.update("INSERT INTO rag.mcp_calls(id,owner_username,chat_id,message_id,server_id,tool_name,input,input_hash,ordinal,status,tool_signature) VALUES(?,?,?,?,?,?,?::jsonb,?,?,'AWAITING_APPROVAL',?)",
-                        UUID.randomUUID(),context.owner(),context.chatId(),context.messageId(),server,tool,input,hash,ordinal,signature);
+                        UUID.randomUUID(),context.owner(),context.chatId(),context.messageId(),server,tool,canonical,hash,ordinal,signature);
             }
             var found=calls(context.owner(),context.messageId()).stream().filter(c->c.server().equals(server) && c.tool().equals(tool)
-                    && json.writeValueAsString(json.readValue(c.input(),Map.class)).equals(input)).findFirst().orElseThrow();
+                    && json.writeValueAsString(json.readValue(c.input(),Map.class)).equals(canonical)).findFirst().orElseThrow();
             if(Set.of("AWAITING_APPROVAL","APPROVED").contains(found.status()) && found.toolSignature()!=null && !signature.equals(found.toolSignature()))
                 throw new ChatFailure(ChatFailure.Kind.INVALID,"Описание инструмента изменилось. Отмените запрос и подтвердите новый вызов.");
-            if(found.status().equals("AWAITING_APPROVAL") && !jdbc.queryForList(
+            if(found.status().equals("AWAITING_APPROVAL") && !ProjectWorkspacePolicy.oneShot(server,tool) && !jdbc.queryForList(
                     "SELECT tool_name FROM rag.mcp_tool_permissions WHERE owner_username=? AND chat_id=? AND server_id=? AND tool_name=? AND tool_signature=?",
                     String.class,context.owner(),context.chatId(),server,tool,signature).isEmpty()) {
                 jdbc.update("UPDATE rag.mcp_calls SET status='APPROVED' WHERE id=? AND owner_username=? AND status='AWAITING_APPROVAL'",found.id(),context.owner());
-                return new Call(found.id(),server,tool,input,"APPROVED",found.ordinal(),found.result(),signature);
+                return new Call(found.id(),server,tool,canonical,"APPROVED",found.ordinal(),found.result(),signature);
             }
             return found;
         });
@@ -178,14 +198,15 @@ public class McpApprovalService {
             throw new ChatFailure(ChatFailure.Kind.BUSY,"Этот вызов уже выполняется.");
         String result;
         try {
-            result=action.get();
+            result=action.apply(canonical);
             if(result==null || result.length()>100000) throw new IllegalStateException("Invalid tool result");
+            if(scoped) workspaces.record(context,tool,result);
             jdbc.update("UPDATE rag.mcp_calls SET status='SUCCEEDED',result=? WHERE id=? AND owner_username=?",result,call.id(),context.owner());
         } catch(RuntimeException e) {
             jdbc.update("UPDATE rag.mcp_calls SET status='UNCERTAIN' WHERE id=? AND owner_username=?",call.id(),context.owner());
             throw new ChatFailure(ChatFailure.Kind.PROVIDER,"MCP-вызов не завершён. Результат действия нужно проверить вручную; автоматический повтор отключён.");
         }
-        return envelope(context,new Call(call.id(),server,tool,input,"SUCCEEDED",call.ordinal(),result));
+        return envelope(context,new Call(call.id(),server,tool,canonical,"SUCCEEDED",call.ordinal(),result));
     }
     private String envelope(RequestContext context,Call call) {
         return json.writeValueAsString(Map.of("sourceNumber",number(context,call),"content",call.result(),

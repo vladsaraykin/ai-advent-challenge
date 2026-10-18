@@ -46,6 +46,7 @@ public class McpToolService {
         var names = new java.util.HashSet<String>();
         for (String id : serverIds.stream().map(String::strip).distinct().sorted().toList()) {
             for (var callback : serverCallbacks(id)) {
+                if (!ProjectWorkspacePolicy.available(context,id,callback.getToolDefinition().name())) continue;
                 if (!names.add(callback.getToolDefinition().name())) {
                     throw new ChatFailure(ChatFailure.Kind.INVALID,
                             "У выбранных MCP-серверов совпадают имена инструментов. Выберите другой набор серверов.");

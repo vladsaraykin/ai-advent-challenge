@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Pinned local MCP servers used by the AI Advent application",
   "scripts": {
-    "test": "node --test project-files/*.test.mjs"
+    "test": "node --test project-files/*.test.mjs project-git/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

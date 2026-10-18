@@ -99,10 +99,10 @@ public class HarnessService {
         var preferences=settings.get(owner,agent,chatId);
         var help=ProjectHelpCommand.parse(content);
         boolean explicitFiles=ProjectFilesCommand.matches(content);
-        boolean gitBranch=!explicitFiles && ProjectGitCommand.requestsCurrentBranch(content,Set.copyOf(preferences.mcpServerIds()));
-        boolean previousFiles=!gitBranch && preferences.mcpServerIds().contains("project-files")
+        boolean previousFiles=preferences.mcpServerIds().contains("project-files")
                 && requests.latestCompleted(owner,agent,chatId).map(value->value.context().fileOperations()).orElse(false);
-        boolean files=!gitBranch && ProjectFilesCommand.continues(content,previousFiles);
+        boolean files=ProjectFilesCommand.continues(content,previousFiles);
+        boolean gitBranch=!files && !explicitFiles && ProjectGitCommand.requestsCurrentBranch(content,Set.copyOf(preferences.mcpServerIds()));
         if(files) {
             if(!preferences.mcpServerIds().contains("project-files"))
                 log.warn("harness_request_rejected agentId={} chatId={} requestId={} reason=project_files_not_selected mcpServers={}",

@@ -18,6 +18,7 @@ import ToolPermissions from './components/ToolPermissions'
 import RequestUsage from './components/RequestUsage'
 import RetrievalSettings from './components/RetrievalSettings'
 import HealthMonitor from './components/HealthMonitor'
+import ProjectWorkspace from './components/ProjectWorkspace'
 
 const remember = (key, value) => { try { localStorage.setItem(key, value) } catch { /* Optional storage. */ } }
 const recalled = key => { try { return localStorage.getItem(key) || '' } catch { return '' } }
@@ -434,6 +435,14 @@ export default function App({ api = agentApi }) {
         : <MessageList messages={transcript || chat?.messages || []} agent={agent} pending={pending || !!activeJob} pendingMessage={pendingMessage}
           streamedAnswer={streamedAnswer} streamPhase={streamPhase} />}
       <ToolApproval call={approval?.call} busy={pending} onDecide={decideTool} onCancel={cancelToolRequest} />
+      {chat && <ProjectWorkspace api={api} agentId={agentId} chatId={chat.id} pending={pending || !!activeJob}
+        revision={`${chat.updatedAt}/${approval?.call?.id || ''}`} />}
+      {(filesMode || filesCommand) && filesSelected && !settings.mcpServerIds.includes('project-git') && <div className="notice-banner" role="region" aria-label="Подключение Git MCP">
+        <p>Для отдельной ветки, записи исходников и PR выберите также project-git. Без него доступен только анализ.</p>
+        {mcpServers.some(server => server.id === 'project-git' && server.connected && !server.error) && <button type="button"
+          disabled={pending || !!approval || settingsBusy || settings.mcpServerIds.length >= 8 || chat?.readOnly}
+          onClick={() => changeSettings({ mcpServerIds: [...settings.mcpServerIds, 'project-git'] })}>Подключить project-git к задаче</button>}
+      </div>}
       {notice && <div className="notice-banner" role="status">{notice}</div>}
       {error && <div className="error-banner" role="alert"><span>{error}</span>
         {!pending && <button type="button" onClick={() => { setError(''); setReload(value => value + 1) }}>Обновить</button>}</div>}

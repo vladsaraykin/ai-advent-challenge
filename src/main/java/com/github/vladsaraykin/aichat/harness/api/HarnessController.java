@@ -26,9 +26,21 @@ public class HarnessController {
     private final ChatSettingsRepository settings;
     private final HarnessRequestRepository requests;
     private final McpApprovalService approvals;
+    private final com.github.vladsaraykin.aichat.mcp.application.ProjectWorkspaceStore workspaces;
     public HarnessController(HarnessService harness,ChatService chats,JdbcChatRepository history,
             ChatSettingsRepository settings,HarnessRequestRepository requests,McpApprovalService approvals) {
+        this(harness,chats,history,settings,requests,approvals,null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public HarnessController(HarnessService harness,ChatService chats,JdbcChatRepository history,
+            ChatSettingsRepository settings,HarnessRequestRepository requests,McpApprovalService approvals,
+            com.github.vladsaraykin.aichat.mcp.application.ProjectWorkspaceStore workspaces) {
         this.harness=harness;this.chats=chats;this.history=history;this.settings=settings;this.requests=requests;this.approvals=approvals;
+        this.workspaces=workspaces;
+    }
+    @GetMapping("/workspace") public Map<String,Object> workspace(Principal user,@PathVariable String agentId,@PathVariable UUID chatId) {
+        chats.get(user.getName(),agentId,chatId);
+        return workspaces.find(user.getName(),agentId,chatId).<Map<String,Object>>map(value->Map.of("workspace",value)).orElse(Map.of());
     }
     @GetMapping("/history") public List<ChatMessage> history(Principal user,@PathVariable String agentId,@PathVariable UUID chatId) {
         return history.history(user.getName(),agentId,chatId);

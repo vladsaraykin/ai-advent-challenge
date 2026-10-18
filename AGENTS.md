@@ -13,6 +13,8 @@
 
 ## Architecture
 
+- Day 34: project-files/project-git changes use a per-chat worktree from origin/main, never the running checkout. Backend owns workspace IDs and revision-bound read caches. Only vlad may write/run checks/use GitHub. Deletion, push and PR always require exact one-shot approval; saved grants cannot bypass it. No arbitrary shell, merge, force push, reset or automatic worktree cleanup. Worktrees are not OS sandboxes; checks run only trusted code with restricted environment/timeouts. PostgreSQL integration tests run in disposable Docker containers using automation/postgres-tests.mjs, never a host-installed or production database.
+
 - Use Java 21 and Spring Boot for JSON REST endpoints and SSE response streaming, and React JavaScript with Vite for the UI.
 - Separate HTTP DTOs/controllers, application orchestration, domain values, and the Spring AI/OpenAI adapter.
 - Use immutable Java records for DTOs/domain results and constructor injection for components.

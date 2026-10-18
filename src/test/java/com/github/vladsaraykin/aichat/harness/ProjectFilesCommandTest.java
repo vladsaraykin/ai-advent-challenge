@@ -29,4 +29,9 @@ class ProjectFilesCommandTest {
         assertThat(settings.mcpServerIds()).contains("filesystem", "excel");
         assertThatThrownBy(() -> ProjectFilesCommand.snapshot(ChatSettings.defaults())).isInstanceOf(ChatFailure.class);
     }
+    @Test void includesOnlyBothProjectServersWhenGitWasExplicitlySelected() {
+        var selected=new ChatSettings(0,true,List.of("filesystem","project-git","project-files","excel"),null);
+        assertThat(ProjectFilesCommand.snapshot(selected).mcpServerIds()).containsExactly("project-files","project-git");
+        assertThat(selected.mcpServerIds()).contains("filesystem","excel");
+    }
 }

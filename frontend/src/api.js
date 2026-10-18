@@ -129,6 +129,7 @@ export const agentApi = {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }),
   pendingRequest: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/pending'),
+  projectWorkspace: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/workspace'),
   requestDetails: (agentId, chatId, id) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + `/requests/${id}`),
   approveTool: (agentId, chatId, id, body, handlers) => stream(chatPath(agentId, chatId) + `/requests/${id}/approval/stream`, body, handlers, '/api/harness/agents'),
   toolPermissions: (agentId, chatId) => rawRequest('/api/harness/agents' + chatPath(agentId, chatId) + '/tool-permissions'),

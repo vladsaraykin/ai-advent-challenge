@@ -21,7 +21,7 @@ test('MCP handshake, tools, multi-file analysis, preview and confirmed write con
     args: [fileURLToPath(new URL('./server.mjs', import.meta.url)), root], stderr: 'inherit' }));
   assert.equal(client.getServerVersion().name, 'ai-advent-project-files');
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 5);
+  assert.equal(tools.length, 10);
   assert.equal(tools.find(tool => tool.name === 'project_write_document').annotations.readOnlyHint, false);
   async function call(name, args) {
     const result = await client.callTool({ name, arguments: args });

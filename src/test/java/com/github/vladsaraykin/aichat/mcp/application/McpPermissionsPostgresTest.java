@@ -32,7 +32,9 @@ class McpPermissionsPostgresTest {
     McpApprovalService approvals;
 
     @BeforeAll static void schema() {
-        ds=new DriverManagerDataSource(System.getenv("MCP_PERMISSION_TEST_DATABASE_URL"),System.getenv("USER"),"");
+        ds=new DriverManagerDataSource(System.getenv("MCP_PERMISSION_TEST_DATABASE_URL"),
+                System.getenv().getOrDefault("MCP_PERMISSION_TEST_DATABASE_USERNAME",System.getenv("USER")),
+                System.getenv().getOrDefault("MCP_PERMISSION_TEST_DATABASE_PASSWORD",""));
         jdbc=new JdbcTemplate(ds);
         if(jdbc.queryForObject("SELECT to_regnamespace('rag') IS NOT NULL",Boolean.class))
             throw new IllegalStateException("Refusing existing rag schema: disposable database required");

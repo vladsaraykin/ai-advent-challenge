@@ -30,7 +30,7 @@ class HarnessConversationTest {
                 new ChatSettings(0,false,List.of("project-files"),null),null,null,null,false,null,false,true);
         var parts=new ConfiguredAgent(definition,model).withRequestContext(context)
                 .answerStream(null,List.of(),user).collectList().block();
-        assertThat(prompt.get()).contains("Режим /files", "project_preview_document", "expectedSha256", "Planning/Done",
+        assertThat(prompt.get()).contains("Режим /files", "project_preview_edits", "project_workspace_create", "expectedSha256", "Planning/Done",
                         "Если цель ясна", "Каждый вызов требует разрешения UI")
                 .doesNotContain("Вначале согласуй цель и план", "выполняй инструменты только на Execution/Validation")
                 .doesNotContain(com.github.vladsaraykin.aichat.rag.application.GroundedAnswerValidator.INSTRUCTION);

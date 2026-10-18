@@ -58,17 +58,17 @@
 | `spring.ai.mcp.client.name` | `ai-advent-mcp-client` | Клиентское имя в MCP handshake; не ID соединения в UI. |
 | `spring.ai.mcp.client.version` | `1.0.0` | Версия клиента, передаваемая MCP-серверам. |
 | `spring.ai.mcp.client.type` | `SYNC` | Используется синхронный MCP API, совместимый с текущим tool orchestration. |
-| `spring.ai.mcp.client.request-timeout` | `MCP_REQUEST_TIMEOUT`, `20s` | Timeout MCP-запроса. |
+| `spring.ai.mcp.client.request-timeout` | `MCP_REQUEST_TIMEOUT`, `180s` | Timeout MCP-запроса; больше внутреннего предела проверки 120s. При меньшем timeout прерванная запись получает неизвестный результат и не повторяется автоматически. |
 | `spring.ai.mcp.client.toolcallback.enabled` | `false` | Отключает автоматическое предоставление Spring callbacks модели. Приложение формирует callbacks само, только для выбранных серверов и с учётом обязательного approval. |
 | `spring.ai.mcp.client.stdio.connections.filesystem.command` | `MCP_FILESYSTEM_COMMAND`, `node` | Команда запуска filesystem MCP. |
 | `...filesystem.args[0]` | `MCP_FILESYSTEM_ENTRYPOINT`, `mcp/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js` | Путь к npm entrypoint filesystem MCP. |
 | `...filesystem.args[1]` | `MCP_FILESYSTEM_ROOT`, `.` | Единственный разрешённый корень filesystem MCP. Ограничьте его минимально нужным абсолютным путём; не открывайте секреты, домашнюю директорию целиком или каталоги с DB backups. |
-| `spring.ai.mcp.client.stdio.connections.project-git.command` | `MCP_PROJECT_GIT_COMMAND`, `node` | Команда запуска встроенного read-only MCP-сервера проекта. |
-| `...project-git.args[0]` | `MCP_PROJECT_GIT_ENTRYPOINT`, `mcp/project-git/server.mjs` | Entry point встроенного MCP для текущей ветки и списка отслеживаемых файлов. |
-| `...project-git.args[1]` | `MCP_PROJECT_GIT_ROOT`, `.` | Путь к checkout, в котором MCP выполняет только разрешённые read-only git-команды. |
-| `spring.ai.mcp.client.stdio.connections.project-files.command` | `MCP_PROJECT_FILES_COMMAND`, `node` | Запускает ограниченный MCP для поиска/анализа файлов и изменения документации. |
+| `spring.ai.mcp.client.stdio.connections.project-git.command` | `MCP_PROJECT_GIT_COMMAND`, `node` | Команда запуска MCP для чтения Git, worktree, фиксированных проверок, commit, push и PR. Запись только vlad; push/PR с разовым подтверждением. |
+| `...project-git.args[0]` | `MCP_PROJECT_GIT_ENTRYPOINT`, `mcp/project-git/server.mjs` | Entry point Git MCP. На машине backend нужны Git, gh CLI с авторизацией vladsaraykin; для проверок также Maven/npm и зависимости worktree. |
+| `...project-git.args[1]` | `MCP_PROJECT_GIT_ROOT`, `.` | Исходный checkout с origin vladsaraykin/ai-advent-challenge. Должен совпадать с MCP_PROJECT_FILES_ROOT. От fetched origin/main создаются data/project-workspaces/<chatId>, ветки ai/task-<chatId>; основной checkout не переключается. |
+| `spring.ai.mcp.client.stdio.connections.project-files.command` | `MCP_PROJECT_FILES_COMMAND`, `node` | MCP для поиска, чтения и изменения текстовых файлов задачи, не только документации. |
 | `...project-files.args[0]` | `MCP_PROJECT_FILES_ENTRYPOINT`, `mcp/project-files/server.mjs` | Entry point файлового MCP. Требует установленных `mcp/node_modules`. Для JAR можно задать абсолютный путь. |
-| `...project-files.args[1]` | `MCP_PROJECT_FILES_ROOT`, `.` | Корень Git checkout. Запись разрешена только в README.md и project/docs/**/*.md. Для RAG-синхронизации должен совпадать с RAG_PROJECT_DOCS_ROOT. |
+| `...project-files.args[1]` | `MCP_PROJECT_FILES_ROOT`, `.` | Исходный checkout, тот же что у project-git; backend привязывает операции к worktree чата. Секреты, .git, data, зависимости/build output и ссылки закрыты. RAG_PROJECT_DOCS_ROOT остаётся исходным checkout, не worktree задачи. |
 | `spring.ai.mcp.client.stdio.connections.excel.command` | `MCP_EXCEL_COMMAND`, `uv` | Команда запуска существующего Excel MCP. |
 | `...excel.args[0..1]` | `--directory`, затем `MCP_EXCEL_DIRECTORY` (default `../excel-mcp`) | Рабочий каталог проекта Excel MCP для `uv`. |
 | `...excel.args[2..5]` | `run --frozen --no-sync excel-mcp` | Фиксированные аргументы запуска; не загружают/не обновляют зависимости при старте. |
