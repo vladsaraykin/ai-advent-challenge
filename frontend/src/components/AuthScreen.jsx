@@ -5,12 +5,13 @@ export default function AuthScreen({ api, onAuthenticated }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [birthDate, setBirthDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError('')
     try {
-      if (register) await api.register({ username, password, displayName })
+      if (register) await api.register({ username, password, displayName, birthDate })
       api.setCredentials(username.trim().toLowerCase(), password)
       onAuthenticated(await api.me())
     } catch (exception) {
@@ -27,6 +28,8 @@ export default function AuthScreen({ api, onAuthenticated }) {
           value={username} onChange={event => setUsername(event.target.value)} /></label>
         {register && <label>Как к вам обращаться<input maxLength="80" autoComplete="name"
           value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>}
+        {register && <label>Дата рождения<input required type="date" max={new Date().toISOString().slice(0, 10)}
+          autoComplete="bday" value={birthDate} onChange={event => setBirthDate(event.target.value)} /></label>}
         <label>Пароль<input required minLength="8" maxLength="200" type="password"
           autoComplete={register ? 'new-password' : 'current-password'} value={password}
           onChange={event => setPassword(event.target.value)} /></label>
